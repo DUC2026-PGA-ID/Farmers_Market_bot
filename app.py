@@ -1,7 +1,6 @@
 import os
 import telebot
 from flask import Flask, request
-from telebot import types
 
 # ១. បំពាក់លេខ Token ផ្លូវការរបស់អ្នក
 BOT_TOKEN = "8716181670:AAGvxUPM6xzQl6NIWDfdfk_RCxgflIbXG2w"
@@ -14,9 +13,11 @@ app = Flask(__name__)
 def webhook():
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
+        
+        # កែសម្រួលត្រង់ចំណុចនេះ៖ បង្កើតទម្រង់ Update ឱ្យបានត្រឹមត្រូវតាមស្តង់ដារ API
         update = telebot.types.Update.de_json(json_string)
         
-        # បញ្ជូនសារទៅឱ្យ Handler ដំណើរការឆ្លើយតបភ្លាមៗ
+        # បញ្ជូនទៅឱ្យ Handler ដំណើរការ
         bot.process_new_updates([update])
         return 'OK', 200
     else:
@@ -25,7 +26,6 @@ def webhook():
 # ៣. កូដឆ្លើយតបសារនៅពេលកសិករ ឬអ្នកប្រើប្រាស់ចុច /start
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    # ទាញយកឈ្មោះពិតរបស់អ្នកប្រើប្រាស់ពី Telegram Profile (ដោះស្រាយបញ្ហា NaN)
     user_name = message.from_user.first_name if message.from_user.first_name else "កសិករ"
     
     welcome_text = (
@@ -34,13 +34,12 @@ def send_welcome(message):
     )
     
     # បង្កើតប៊ូតុងក្តារចុចខ្មែរ (Khmer Reply Keyboard Layout)
-    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    btn_rice = types.KeyboardButton('🌾 តម្លៃស្រូវ')
-    btn_pepper = types.KeyboardButton('🌶️ តម្លៃម្ទេស')
-    btn_market = types.KeyboardButton('📈 ទីផ្សារ')
-    btn_contact = types.KeyboardButton('📞 ទំនាក់ទំនង')
+    markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    btn_rice = telebot.types.KeyboardButton('🌾 តម្លៃស្រូវ')
+    btn_pepper = telebot.types.KeyboardButton('🌶️ តម្លៃម្ទេស')
+    btn_market = telebot.types.KeyboardButton('📈 ទីផ្សារ')
+    btn_contact = telebot.types.KeyboardButton('📞 ទំនាក់ទំនង')
     
-    # រៀបជួរដេកប៊ូតុង
     markup.add(btn_rice, btn_pepper)
     markup.add(btn_market, btn_contact)
     
@@ -64,6 +63,5 @@ def index():
     return "<h1>🌾 Farmers Market Bot Server is Active and Running on Render!</h1>", 200
 
 if __name__ == "__main__":
-    # Render ចាប់យក Port តាមរយះ Environment Variable (Port: 10000)
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
