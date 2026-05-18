@@ -15,6 +15,8 @@ def webhook():
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
+        
+        # បញ្ជូនសារទៅឱ្យ Handler ដំណើរការឆ្លើយតបភ្លាមៗ
         bot.process_new_updates([update])
         return 'OK', 200
     else:
@@ -62,5 +64,6 @@ def index():
     return "<h1>🌾 Farmers Market Bot Server is Active and Running on Render!</h1>", 200
 
 if __name__ == "__main__":
+    # Render ចាប់យក Port តាមរយះ Environment Variable (Port: 10000)
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
