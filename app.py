@@ -37,9 +37,47 @@ ADMIN_USER_IDS = {
     for value in os.getenv("ADMIN_USER_IDS", "").split(",")
     if value.strip().isdigit()
 }
-# Telegram user profiles do not expose gender, so we default it until
-# you add a separate collection step in the bot conversation.
+# Telegram user profiles do not expose gender, so we keep a default value
+# until the onboarding flow collects it from the user.
 DEFAULT_GENDER = "unknown"
+GENDER_MALE = "male"
+GENDER_FEMALE = "female"
+GENDER_OTHER = "other"
+GENDER_LABEL_TO_VALUE = {
+    "👨 ប្រុស": GENDER_MALE,
+    "👩 ស្រី": GENDER_FEMALE,
+    "🧑 ផ្សេងៗ": GENDER_OTHER,
+}
+CROP_LABEL_TO_VALUE = {
+    "🌾 ស្រូវ": "ស្រូវ",
+    "🌶️ ម្ទេស": "ម្ទេស",
+    "🌾🌶️ ស្រូវ និង ម្ទេស": "ស្រូវ និង ម្ទេស",
+    "📦 ផ្សេងៗ": "ផ្សេងៗ",
+}
+ONBOARDING_STEP_ORDER = {
+    "full_name": 1,
+    "gender": 2,
+    "province": 3,
+    "crop_interest": 4,
+}
+PROFILE_MIGRATIONS = {
+    "full_name": (
+        "ALTER TABLE users ADD COLUMN full_name VARCHAR(255) NULL "
+        "AFTER first_name"
+    ),
+    "province": (
+        "ALTER TABLE users ADD COLUMN province VARCHAR(100) NULL "
+        "AFTER gender"
+    ),
+    "crop_interest": (
+        "ALTER TABLE users ADD COLUMN crop_interest VARCHAR(100) NULL "
+        "AFTER province"
+    ),
+    "onboarding_completed": (
+        "ALTER TABLE users ADD COLUMN onboarding_completed "
+        "TINYINT(1) NOT NULL DEFAULT 0 AFTER crop_interest"
+    ),
+}
 # Telegram secret tokens only allow a narrow character set, so we derive
 # a stable header-safe token from the configured secret.
 TELEGRAM_SECRET_TOKEN = (
@@ -114,6 +152,8 @@ COMMAND_TO_BUTTON = {
 GLOBAL_BOT_COMMANDS = [
     telebot.types.BotCommand("start", "ម៉ឺនុយមេ"),
     telebot.types.BotCommand("help", "មើលបញ្ជីពាក្យបញ្ជា"),
+    telebot.types.BotCommand("profile", "មើលប្រវត្តិរូប"),
+    telebot.types.BotCommand("editprofile", "កែប្រវត្តិរូប"),
     telebot.types.BotCommand("rice", "មើលតម្លៃស្រូវ"),
     telebot.types.BotCommand("pepper", "មើលតម្លៃម្ទេស"),
     telebot.types.BotCommand("market", "មើលស្ថានភាពទីផ្សារ"),
@@ -131,6 +171,8 @@ FALLBACK_TEXT = (
     "\u179f\u17bc\u1798\u179f\u17b6\u1780\u1798\u17bd\u1799\u1780\u17d2\u1793\u17bb\u1784\u1785\u17c6\u178e\u17c4\u1798:\n"
     "\u2022 <code>/start</code>\n"
     "\u2022 <code>/help</code>\n"
+    "\u2022 <code>/profile</code>\n"
+    "\u2022 <code>/editprofile</code>\n"
     "\u2022 <code>/rice</code>\n"
     "\u2022 <code>/pepper</code>\n"
     "\u2022 <code>/market</code>\n"
@@ -185,6 +227,13 @@ def _get_db_connection():
     )
 
 
+def _ensure_profile_columns(cursor) -> None:
+    for column_name, statement in PROFILE_MIGRATIONS.items():
+        cursor.execute("SHOW COLUMNS FROM users LIKE %s", (column_name,))
+        if cursor.fetchone() is None:
+            cursor.execute(statement)
+
+
 def ensure_database_ready() -> bool:
     global _database_ready, _database_skip_logged
 
@@ -231,6 +280,7 @@ def ensure_database_ready() -> bool:
                 )
                 """
             )
+            _ensure_profile_columns(cursor)
             connection.commit()
             _database_ready = True
             logger.info("MySQL users table is ready.")
@@ -257,7 +307,12 @@ def register_or_update_user(message: dict) -> dict:
         "is_new_user": False,
         "is_admin": is_admin,
         "joined_date": None,
+        "first_name": user.get("first_name") or "Farmer",
+        "full_name": "",
         "gender": DEFAULT_GENDER,
+        "province": "",
+        "crop_interest": "",
+        "onboarding_completed": False,
     }
 
     if not user_id or not chat_id or not ensure_database_ready():
@@ -270,7 +325,19 @@ def register_or_update_user(message: dict) -> dict:
         cursor = connection.cursor(dictionary=True)
         latest_first_name = user.get("first_name") or "Farmer"
         cursor.execute(
-            "SELECT id, first_name, gender, joined_date FROM users WHERE chat_id = %s",
+            """
+            SELECT
+                id,
+                first_name,
+                full_name,
+                gender,
+                province,
+                crop_interest,
+                onboarding_completed,
+                joined_date
+            FROM users
+            WHERE chat_id = %s
+            """,
             (chat_id,),
         )
         existing_user = cursor.fetchone()
@@ -279,7 +346,16 @@ def register_or_update_user(message: dict) -> dict:
         state["is_new_user"] = existing_user is None
         if existing_user:
             state["joined_date"] = existing_user["joined_date"]
+            state["first_name"] = existing_user["first_name"] or latest_first_name
+            state["full_name"] = (existing_user.get("full_name") or "").strip()
             state["gender"] = existing_user["gender"] or DEFAULT_GENDER
+            state["province"] = (existing_user.get("province") or "").strip()
+            state["crop_interest"] = (
+                existing_user.get("crop_interest") or ""
+            ).strip()
+            state["onboarding_completed"] = bool(
+                existing_user.get("onboarding_completed")
+            )
             if latest_first_name != (existing_user["first_name"] or ""):
                 cursor.execute(
                     "UPDATE users SET first_name = %s WHERE chat_id = %s",
@@ -306,6 +382,7 @@ def register_or_update_user(message: dict) -> dict:
             )
             connection.commit()
             state["joined_date"] = None
+            state["first_name"] = latest_first_name
 
         return state
     except MySQLError:
@@ -316,6 +393,58 @@ def register_or_update_user(message: dict) -> dict:
             cursor.close()
         if connection is not None:
             connection.close()
+
+
+def update_user_profile(chat_id: int, **fields) -> bool:
+    if not ensure_database_ready() or not fields:
+        return False
+
+    allowed_fields = {
+        "full_name",
+        "gender",
+        "province",
+        "crop_interest",
+        "onboarding_completed",
+    }
+    sanitized_fields = {
+        key: value for key, value in fields.items() if key in allowed_fields
+    }
+    if not sanitized_fields:
+        return False
+
+    assignments = ", ".join(f"{key} = %s" for key in sanitized_fields)
+    values = list(sanitized_fields.values()) + [chat_id]
+
+    connection = None
+    cursor = None
+    try:
+        connection = _get_db_connection()
+        cursor = connection.cursor()
+        cursor.execute(
+            f"UPDATE users SET {assignments} WHERE chat_id = %s",
+            values,
+        )
+        connection.commit()
+        return True
+    except MySQLError:
+        logger.exception("Unable to update Telegram user profile in MySQL.")
+        return False
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+def reset_user_profile(chat_id: int) -> bool:
+    return update_user_profile(
+        chat_id,
+        full_name=None,
+        gender=DEFAULT_GENDER,
+        province=None,
+        crop_interest=None,
+        onboarding_completed=0,
+    )
 
 
 def get_user_stats():
@@ -333,7 +462,10 @@ def get_user_stats():
                 COUNT(*) AS total_users,
                 COALESCE(SUM(CASE
                     WHEN DATE(joined_date) = UTC_DATE() THEN 1 ELSE 0 END), 0)
-                    AS joined_today
+                    AS joined_today,
+                COALESCE(SUM(CASE
+                    WHEN onboarding_completed = 1 THEN 1 ELSE 0 END), 0)
+                    AS completed_profiles
             FROM users
             """
         )
@@ -365,7 +497,11 @@ def get_recent_users(limit: int = 10):
                 id,
                 chat_id,
                 first_name,
+                full_name,
                 gender,
+                province,
+                crop_interest,
+                onboarding_completed,
                 joined_date
             FROM users
             ORDER BY joined_date DESC
@@ -474,6 +610,29 @@ def build_main_keyboard():
     return markup
 
 
+def build_gender_keyboard():
+    markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    markup.add(
+        telebot.types.KeyboardButton("👨 ប្រុស"),
+        telebot.types.KeyboardButton("👩 ស្រី"),
+    )
+    markup.add(telebot.types.KeyboardButton("🧑 ផ្សេងៗ"))
+    return markup
+
+
+def build_crop_keyboard():
+    markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    markup.add(
+        telebot.types.KeyboardButton("🌾 ស្រូវ"),
+        telebot.types.KeyboardButton("🌶️ ម្ទេស"),
+    )
+    markup.add(
+        telebot.types.KeyboardButton("🌾🌶️ ស្រូវ និង ម្ទេស"),
+        telebot.types.KeyboardButton("📦 ផ្សេងៗ"),
+    )
+    return markup
+
+
 def send_bot_message(chat_id: int, text: str, reply_markup=None) -> None:
     bot.send_message(
         chat_id,
@@ -490,6 +649,61 @@ def _display_name(first_name: str, username: str) -> str:
     if username:
         return f"@{username}"
     return "\u1780\u179f\u17b7\u1780\u179a"
+
+
+def _profile_display_name(user_state: dict, fallback_name: str) -> str:
+    full_name = (user_state.get("full_name") or "").strip()
+    if full_name:
+        return full_name
+
+    first_name = (user_state.get("first_name") or "").strip()
+    if first_name:
+        return first_name
+
+    return fallback_name
+
+
+def _next_onboarding_step(user_state: dict) -> str | None:
+    if not user_state.get("db_enabled"):
+        return None
+
+    if not (user_state.get("full_name") or "").strip():
+        return "full_name"
+    if (user_state.get("gender") or DEFAULT_GENDER).strip().lower() == DEFAULT_GENDER:
+        return "gender"
+    if not (user_state.get("province") or "").strip():
+        return "province"
+    if not (user_state.get("crop_interest") or "").strip():
+        return "crop_interest"
+    return None
+
+
+def _profile_completion_count(user_state: dict) -> int:
+    completed = 0
+    if (user_state.get("full_name") or "").strip():
+        completed += 1
+    if (user_state.get("gender") or DEFAULT_GENDER).strip().lower() != DEFAULT_GENDER:
+        completed += 1
+    if (user_state.get("province") or "").strip():
+        completed += 1
+    if (user_state.get("crop_interest") or "").strip():
+        completed += 1
+    return completed
+
+
+def _sync_onboarding_status(chat_id: int, user_state: dict) -> bool:
+    if not user_state.get("db_enabled"):
+        return False
+
+    is_complete = _next_onboarding_step(user_state) is None
+    desired_value = bool(is_complete)
+    if bool(user_state.get("onboarding_completed")) == desired_value:
+        return desired_value
+
+    if update_user_profile(chat_id, onboarding_completed=int(desired_value)):
+        user_state["onboarding_completed"] = desired_value
+        return desired_value
+    return bool(user_state.get("onboarding_completed"))
 
 
 def _format_datetime(value) -> str:
@@ -524,29 +738,199 @@ def _user_icon(is_admin: bool, gender_value: str) -> str:
 
 def build_help_text(user_state: dict) -> str:
     lines = [
-        "\U0001f4cc <b>បញ្ជីពាក្យបញ្ជា</b>",
-        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501",
-        "\u2022 <code>/start</code> - បើកម៉ឺនុយមេ",
-        "\u2022 <code>/help</code> - មើលបញ្ជីពាក្យបញ្ជាទាំងអស់",
-        "\u2022 <code>/rice</code> - មើលតម្លៃស្រូវ",
-        "\u2022 <code>/pepper</code> - មើលតម្លៃម្ទេស",
-        "\u2022 <code>/market</code> - មើលស្ថានភាពទីផ្សារ",
-        "\u2022 <code>/contact</code> - មើលព័ត៌មានទំនាក់ទំនង",
+        "📌 <b>បញ្ជីពាក្យបញ្ជា</b>",
+        "━━━━━━━━━━━━",
+        "• <code>/start</code> - បើកម៉ឺនុយមេ",
+        "• <code>/help</code> - មើលពាក្យបញ្ជាទាំងអស់",
+        "• <code>/profile</code> - មើលប្រវត្តិរូបរបស់អ្នក",
+        "• <code>/editprofile</code> - កែព័ត៌មានប្រវត្តិរូប",
+        "• <code>/rice</code> - មើលតម្លៃស្រូវ",
+        "• <code>/pepper</code> - មើលតម្លៃម្ទេស",
+        "• <code>/market</code> - មើលស្ថានភាពទីផ្សារ",
+        "• <code>/contact</code> - មើលព័ត៌មានទំនាក់ទំនង",
     ]
     if user_state.get("is_admin"):
         lines.extend(
             [
                 "",
-                "\U0001f6e1\ufe0f <b>ពាក្យបញ្ជាសម្រាប់អ្នកគ្រប់គ្រង</b>",
-                "\u2022 <code>/users</code> - មើលស្ថិតិអ្នកប្រើ",
-                "\u2022 <code>/recentusers</code> - មើលអ្នកប្រើថ្មីៗ",
+                "🛡️ <b>ពាក្យបញ្ជាសម្រាប់អ្នកគ្រប់គ្រង</b>",
+                "• <code>/users</code> - មើលស្ថិតិអ្នកប្រើ",
+                "• <code>/recentusers</code> - មើលអ្នកប្រើថ្មីៗ",
             ]
         )
     return "\n".join(lines)
 
 
+def build_profile_text(user_state: dict, fallback_name: str) -> str:
+    display_name = escape(_profile_display_name(user_state, fallback_name))
+    gender_label = _format_gender(user_state.get("gender") or DEFAULT_GENDER)
+    province = escape((user_state.get("province") or "មិនទាន់កំណត់").strip() or "មិនទាន់កំណត់")
+    crop_interest = escape(
+        (user_state.get("crop_interest") or "មិនទាន់កំណត់").strip()
+        or "មិនទាន់កំណត់"
+    )
+    joined_date = _format_datetime(user_state.get("joined_date"))
+    completion_status = (
+        "រួចរាល់" if user_state.get("onboarding_completed") else "មិនទាន់រួច"
+    )
+
+    return (
+        "👤 <b>ប្រវត្តិរូបរបស់អ្នក</b>\n"
+        "━━━━━━━━━━━━\n"
+        f"• ឈ្មោះ: <b>{display_name}</b>\n"
+        f"• ភេទ: {gender_label}\n"
+        f"• ខេត្ត/តំបន់: {province}\n"
+        f"• ដំណាំចាប់អារម្មណ៍: {crop_interest}\n"
+        f"• បានចូលប្រើ: <code>{joined_date}</code>\n"
+        f"• ស្ថានភាពប្រវត្តិរូប: <b>{completion_status}</b>"
+    )
+
+
+def send_profile_card(chat_id: int, user_state: dict, fallback_name: str) -> None:
+    if not user_state.get("db_enabled"):
+        send_bot_message(
+            chat_id,
+            "⚠️ <b>មុខងារប្រវត្តិរូបមិនទាន់អាចប្រើបានទេ</b>\n"
+            "សូមពិនិត្យការកំណត់មូលដ្ឋានទិន្នន័យម្តងទៀត។",
+        )
+        return
+
+    send_bot_message(chat_id, build_profile_text(user_state, fallback_name))
+
+
+def send_onboarding_intro(chat_id: int, user_state: dict, fallback_name: str) -> None:
+    completed = _profile_completion_count(user_state)
+    display_name = escape(_profile_display_name(user_state, fallback_name))
+    send_bot_message(
+        chat_id,
+        (
+            f"🧾 <b>សួស្តី {display_name}!</b>\n"
+            "មុនពេលប្រើ Agri-Trade Bot ពេញលេញ សូមបំពេញព័ត៌មានខ្លីៗ 4 ជំហានសិន។\n\n"
+            f"📍 វឌ្ឍនភាពបច្ចុប្បន្ន: <b>{completed}/4</b>\n"
+            "បន្ទាប់ពីបំពេញរួច អ្នកអាចមើលតម្លៃទីផ្សារ និងគ្រប់គ្រងប្រវត្តិរូបបានកាន់តែងាយ។"
+        ),
+        reply_markup=telebot.types.ReplyKeyboardRemove(),
+    )
+
+
+def send_onboarding_prompt(chat_id: int, step: str) -> None:
+    step_number = ONBOARDING_STEP_ORDER.get(step, 1)
+    header = f"🪪 <b>ជំហាន {step_number}/4</b>\n"
+
+    if step == "full_name":
+        send_bot_message(
+            chat_id,
+            header
+            + "សូមវាយ <b>ឈ្មោះពេញ</b> របស់អ្នក។\n"
+            + "ឧទាហរណ៍៖ <code>សេង កុមារណាន់</code>",
+            reply_markup=telebot.types.ReplyKeyboardRemove(),
+        )
+        return
+
+    if step == "gender":
+        send_bot_message(
+            chat_id,
+            header + "សូមជ្រើស <b>ភេទ</b> របស់អ្នកពីប៊ូតុងខាងក្រោម។",
+            reply_markup=build_gender_keyboard(),
+        )
+        return
+
+    if step == "province":
+        send_bot_message(
+            chat_id,
+            header
+            + "សូមវាយ <b>ឈ្មោះខេត្ត ឬ តំបន់</b> របស់អ្នក។\n"
+            + "ឧទាហរណ៍៖ <code>បាត់ដំបង</code>",
+            reply_markup=telebot.types.ReplyKeyboardRemove(),
+        )
+        return
+
+    if step == "crop_interest":
+        send_bot_message(
+            chat_id,
+            header + "សូមជ្រើស <b>ដំណាំដែលអ្នកចាប់អារម្មណ៍</b>។",
+            reply_markup=build_crop_keyboard(),
+        )
+
+
+def process_onboarding_input(
+    chat_id: int,
+    text: str,
+    user_state: dict,
+    fallback_name: str,
+) -> bool:
+    step = _next_onboarding_step(user_state)
+    if not step:
+        return False
+
+    value = (text or "").strip()
+    if not value:
+        send_onboarding_prompt(chat_id, step)
+        return True
+
+    if step in {"full_name", "province"} and (
+        value.startswith("/") or value in BUTTON_RESPONSES
+    ):
+        send_bot_message(
+            chat_id,
+            "⚠️ សូមបញ្ចូលជាអក្សរធម្មតា មិនមែនជាពាក្យបញ្ជា ឬប៊ូតុងម៉ឺនុយទេ។",
+        )
+        send_onboarding_prompt(chat_id, step)
+        return True
+
+    if step == "full_name":
+        clean_name = value[:255]
+        if not update_user_profile(chat_id, full_name=clean_name):
+            send_bot_message(chat_id, "⚠️ មិនអាចរក្សាទុកឈ្មោះបានទេ។ សូមសាកម្តងទៀត។")
+            return True
+        user_state["full_name"] = clean_name
+    elif step == "gender":
+        selected_gender = GENDER_LABEL_TO_VALUE.get(value)
+        if not selected_gender:
+            send_bot_message(chat_id, "⚠️ សូមជ្រើសភេទពីប៊ូតុងដែលបានផ្តល់ឲ្យ។")
+            send_onboarding_prompt(chat_id, step)
+            return True
+        if not update_user_profile(chat_id, gender=selected_gender):
+            send_bot_message(chat_id, "⚠️ មិនអាចរក្សាទុកភេទបានទេ។ សូមសាកម្តងទៀត។")
+            return True
+        user_state["gender"] = selected_gender
+    elif step == "province":
+        clean_province = value[:100]
+        if not update_user_profile(chat_id, province=clean_province):
+            send_bot_message(chat_id, "⚠️ មិនអាចរក្សាទុកខេត្ត/តំបន់បានទេ។ សូមសាកម្តងទៀត។")
+            return True
+        user_state["province"] = clean_province
+    elif step == "crop_interest":
+        selected_crop = CROP_LABEL_TO_VALUE.get(value)
+        if not selected_crop:
+            send_bot_message(chat_id, "⚠️ សូមជ្រើសដំណាំពីប៊ូតុងដែលបានផ្តល់ឲ្យ។")
+            send_onboarding_prompt(chat_id, step)
+            return True
+        if not update_user_profile(chat_id, crop_interest=selected_crop):
+            send_bot_message(chat_id, "⚠️ មិនអាចរក្សាទុកដំណាំចាប់អារម្មណ៍បានទេ។ សូមសាកម្តងទៀត។")
+            return True
+        user_state["crop_interest"] = selected_crop
+
+    is_complete = _sync_onboarding_status(chat_id, user_state)
+    next_step = _next_onboarding_step(user_state)
+    if next_step:
+        send_bot_message(chat_id, "✅ បានរក្សាទុករួចហើយ។")
+        send_onboarding_prompt(chat_id, next_step)
+        return True
+
+    if is_complete:
+        send_bot_message(
+            chat_id,
+            "✅ <b>ការបំពេញប្រវត្តិរូបរួចរាល់!</b>\n"
+            "អ្នកអាចប្រើម៉ឺនុយ និងពាក្យបញ្ជាទាំងអស់បានហើយ។",
+            reply_markup=build_main_keyboard(),
+        )
+        send_profile_card(chat_id, user_state, fallback_name)
+    return True
+
+
 def send_welcome(chat_id: int, user_name: str, user_state: dict) -> None:
-    safe_user_name = escape(user_name)
+    safe_user_name = escape(_profile_display_name(user_state, user_name))
     if not user_state.get("db_enabled"):
         intro = (
             f"\U0001f44b \u179f\u17bd\u179f\u17d2\u178f\u17b8 {safe_user_name}! "
@@ -587,6 +971,8 @@ def send_welcome(chat_id: int, user_name: str, user_state: dict) -> None:
         "\u2022 <code>/pepper</code>  \u1798\u17be\u179b\u178f\u1798\u17d2\u179b\u17c3\u1798\u17d2\u1791\u17c1\u179f\n"
         "\u2022 <code>/market</code>  \u1798\u17be\u179b\u179f\u17d2\u1790\u17b6\u1793\u1797\u17b6\u1796\u1791\u17b8\u1795\u17d2\u179f\u17b6\u179a\n"
         "\u2022 <code>/contact</code>  \u1780\u17b6\u179a\u1791\u17c6\u1793\u17b6\u1780\u17cb\u1791\u17c6\u1793\u1784\n"
+        "\u2022 <code>/profile</code>  \u1798\u17be\u179b\u1794\u17d2\u179a\u179c\u178f\u17d2\u178f\u17b7\u179a\u17bc\u1794\n"
+        "\u2022 <code>/editprofile</code>  \u1780\u17c2\u1794\u17d2\u179a\u179c\u178f\u17d2\u178f\u17b7\u179a\u17bc\u1794\n"
         "\u2022 <code>/help</code>  \u1798\u17be\u179b\u1794\u1789\u17d2\u1787\u17b8\u1796\u17b6\u1780\u17d2\u1799\u1794\u1789\u17d2\u1787\u17b6\u1791\u17b6\u17c6\u1784\u17a2\u179f\u17cb\n\n"
         f"{admin_note}"
         "\U0001f447 \u179f\u17bc\u1798\u1787\u17d2\u179a\u17be\u179f\u1794\u17ca\u17bc\u178f\u17bb\u1784"
@@ -614,6 +1000,7 @@ def send_admin_stats(chat_id: int) -> None:
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         f"\U0001f539 \u17a2\u17d2\u1793\u1780\u1794\u17d2\u179a\u17be\u179f\u179a\u17bb\u1794: <b>{stats['total_users']}</b>\n"
         f"\U0001f7e2 \u1785\u17bc\u179b\u1794\u17d2\u179a\u17be\u1790\u17d2\u1784\u17c3\u1793\u17c1\u17c7: <b>{stats['joined_today']}</b>\n"
+        f"\U0001f4dd \u1794\u17d2\u179a\u179c\u178f\u17d2\u178f\u17b7\u179a\u17bd\u1785\u179a\u17b6\u179b\u17cb: <b>{stats['completed_profiles']}</b>\n"
         f"\U0001f6e1\ufe0f \u17a2\u17d2\u1793\u1780\u1782\u17d2\u179a\u1794\u17cb\u1782\u17d2\u179a\u1784: <b>{stats['admin_users']}</b>\n\n"
         "\U0001f4a1 \u1794\u17d2\u179a\u17be <code>/recentusers</code> "
         "\u178a\u17be\u1798\u17d2\u1794\u17b8\u1798\u17be\u179b\u1794\u1789\u17d2\u1787\u17b8\u1790\u17d2\u1798\u17b8\u17d7\u1794\u17d2\u179a\u1785\u17b6\u17c6\u17d4"
@@ -639,16 +1026,29 @@ def send_recent_users(chat_id: int) -> None:
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501",
     ]
     for index, user in enumerate(recent_users, start=1):
-        name = escape(user["first_name"] or "\u1798\u17b7\u1793\u1791\u17b6\u1793\u17cb\u1798\u17b6\u1793\u1788\u17d2\u1798\u17c4\u17c7")
+        display_name = user.get("full_name") or user.get("first_name")
+        name = escape(display_name or "\u1798\u17b7\u1793\u1791\u17b6\u1793\u17cb\u1798\u17b6\u1793\u1788\u17d2\u1798\u17c4\u17c7")
         is_admin_user = user["chat_id"] in ADMIN_USER_IDS
         admin_badge = " <b>[អ្នកគ្រប់គ្រង]</b>" if is_admin_user else ""
         gender_value = user["gender"] or DEFAULT_GENDER
         gender = _format_gender(gender_value)
         user_icon = _user_icon(is_admin_user, gender_value)
+        province = escape((user.get("province") or "មិនទាន់កំណត់").strip() or "មិនទាន់កំណត់")
+        crop_interest = escape(
+            (user.get("crop_interest") or "មិនទាន់កំណត់").strip()
+            or "មិនទាន់កំណត់"
+        )
         joined_date = _format_datetime(user["joined_date"])
+        completion_badge = (
+            ""
+            if user.get("onboarding_completed")
+            else " <i>(កំពុងបំពេញប្រវត្តិរូប)</i>"
+        )
         lines.append(
-            f"{user_icon} <b>#{index} {name}</b>{admin_badge}\n"
+            f"{user_icon} <b>#{index} {name}</b>{admin_badge}{completion_badge}\n"
             f"   \u2022 \u1797\u17c1\u1791: {gender}\n"
+            f"   \u2022 \u178f\u17c6\u1794\u1793\u17cb: {province}\n"
+            f"   \u2022 \u178a\u17c6\u178e\u17b6\u17c6: {crop_interest}\n"
             f"   \u2022 \u1785\u17bc\u179b\u1794\u17d2\u179a\u17be: <code>{joined_date}</code>"
         )
         if index != len(recent_users):
@@ -660,17 +1060,77 @@ def send_recent_users(chat_id: int) -> None:
 def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -> None:
     command = text.split()[0].split("@")[0].lower() if text else ""
     user_name = _display_name(user.get("first_name", ""), user.get("username", ""))
+    onboarding_step = _next_onboarding_step(user_state)
+
+    if command == "/editprofile":
+        if not user_state.get("db_enabled"):
+            send_bot_message(
+                chat_id,
+                "⚠️ <b>មិនអាចកែប្រវត្តិរូបបានទេ</b>\n"
+                "សូមពិនិត្យការកំណត់មូលដ្ឋានទិន្នន័យម្តងទៀត។",
+            )
+            return
+
+        if not reset_user_profile(chat_id):
+            send_bot_message(
+                chat_id,
+                "⚠️ មិនអាចចាប់ផ្តើមកែប្រវត្តិរូបឡើងវិញបានទេ។ សូមសាកម្តងទៀត។",
+            )
+            return
+
+        user_state["full_name"] = ""
+        user_state["gender"] = DEFAULT_GENDER
+        user_state["province"] = ""
+        user_state["crop_interest"] = ""
+        user_state["onboarding_completed"] = False
+
+        send_bot_message(
+            chat_id,
+            "🛠️ <b>បានចាប់ផ្តើមកែប្រវត្តិរូបឡើងវិញ</b>\n"
+            "សូមបំពេញព័ត៌មានរបស់អ្នកម្តងទៀត។",
+            reply_markup=telebot.types.ReplyKeyboardRemove(),
+        )
+        send_onboarding_prompt(chat_id, "full_name")
+        return
+
+    if command == "/profile":
+        send_profile_card(chat_id, user_state, user_name)
+        return
 
     if command == "/start":
-        send_welcome(chat_id, user_name, user_state)
+        if onboarding_step:
+            send_onboarding_intro(chat_id, user_state, user_name)
+            send_onboarding_prompt(chat_id, onboarding_step)
+        else:
+            _sync_onboarding_status(chat_id, user_state)
+            send_welcome(chat_id, user_name, user_state)
         return
+
+    if onboarding_step and command and command not in {"/help"}:
+        send_bot_message(
+            chat_id,
+            "📝 <b>សូមបំពេញប្រវត្តិរូបជាមុនសិន</b>\n"
+            "ប្រើ <code>/start</code> ដើម្បីបន្ត ឬ <code>/editprofile</code> ដើម្បីចាប់ផ្តើមសារជាថ្មី។",
+        )
+        send_onboarding_prompt(chat_id, onboarding_step)
+        return
+
+    if onboarding_step and not command:
+        if process_onboarding_input(chat_id, text, user_state, user_name):
+            return
 
     if command == "/help":
         send_bot_message(
             chat_id,
             build_help_text(user_state),
-            reply_markup=build_main_keyboard(),
+            reply_markup=(
+                telebot.types.ReplyKeyboardRemove()
+                if onboarding_step
+                else build_main_keyboard()
+            ),
         )
+        if onboarding_step:
+            send_onboarding_prompt(chat_id, onboarding_step)
         return
 
     if command in COMMAND_TO_BUTTON:
