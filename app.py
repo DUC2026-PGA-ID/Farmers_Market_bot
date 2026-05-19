@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import os
+from html import escape
 from threading import Lock
 
 import telebot
@@ -54,37 +55,52 @@ BUTTON_CONTACT = "\U0001f4de \u1791\u17c6\u1793\u17b6\u1780\u17cb\u1791\u17c6\u1
 
 BUTTON_RESPONSES = {
     BUTTON_RICE: (
-        "\U0001f33e **\u178f\u1798\u17d2\u179b\u17c3\u179f\u17d2\u179a\u17bc\u179c"
-        "\u1790\u17d2\u1784\u17c3\u1793\u17c1\u17c7\u17d6**\n"
-        "- \u179f\u17d2\u179a\u17bc\u179c\u1780\u17d2\u179a\u17a2\u17bc\u1794 "
-        "(\u179b\u17c1\u1781\u17e1)\u17d6 1,300 \u179a\u17c0\u179b/"
-        "\u1782\u17b8\u17a1\u17bc\u1780\u17d2\u179a\u17b6\u1798\n"
-        "- \u179f\u17d2\u179a\u17bc\u179c\u179f\u1785\u17c6\u1794\u17c9\u17b6\u17d6 "
-        "1,150 \u179a\u17c0\u179b/\u1782\u17b8\u17a1\u17bc\u1780\u17d2\u179a\u17b6\u1798"
+        "\U0001f33e <b>\u178f\u1798\u17d2\u179b\u17c3\u179f\u17d2\u179a\u17bc\u179c"
+        "\u1790\u17d2\u1784\u17c3\u1793\u17c1\u17c7</b>\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\u2022 \u179f\u17d2\u179a\u17bc\u179c\u1780\u17d2\u179a\u17a2\u17bc\u1794 "
+        "(\u179b\u17c1\u1781\u17e1): <b>1,300 \u179a\u17c0\u179b/"
+        "\u1782\u17b8\u17a1\u17bc\u1780\u17d2\u179a\u17b6\u1798</b>\n"
+        "\u2022 \u179f\u17d2\u179a\u17bc\u179c\u179f\u1785\u17c6\u1794\u17c9\u17b6: "
+        "<b>1,150 \u179a\u17c0\u179b/\u1782\u17b8\u17a1\u17bc\u1780\u17d2\u179a\u17b6\u1798</b>\n\n"
+        "\U0001f4a1 \u178f\u1798\u17d2\u179b\u17c3\u17a2\u17b6\u1785\u1794\u17d2\u179a\u17c2"
+        "\u1794\u17d2\u179a\u17bd\u179b\u178f\u17b6\u1798\u178f\u17c6\u1794\u1793\u17cb "
+        "\u1793\u17b7\u1784\u1796\u17c1\u179b\u179c\u17c1\u179b\u17b6\u17d4"
     ),
     BUTTON_PEPPER: (
-        "\U0001f336\ufe0f **\u178f\u1798\u17d2\u179b\u17c3\u1798\u17d2\u1791\u17c1\u179f"
-        "\u1790\u17d2\u1784\u17c3\u1793\u17c1\u17c7\u17d6**\n"
-        "- \u1798\u17d2\u1791\u17c1\u179f\u178a\u17c3\u1793\u17b6\u1784\u17d6 3,500 "
-        "\u179a\u17c0\u179b/\u1782\u17b8\u17a1\u17bc\u1780\u17d2\u179a\u17b6\u1798\n"
-        "- \u1798\u17d2\u1791\u17c1\u179f\u17a2\u17b6\u1785\u1798\u17cd\u179f\u178f\u17d2\u179c\u17d6 "
-        "6,000 \u179a\u17c0\u179b/\u1782\u17b8\u17a1\u17bc\u1780\u17d2\u179a\u17b6\u1798"
+        "\U0001f336\ufe0f <b>\u178f\u1798\u17d2\u179b\u17c3\u1798\u17d2\u1791\u17c1\u179f"
+        "\u1790\u17d2\u1784\u17c3\u1793\u17c1\u17c7</b>\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\u2022 \u1798\u17d2\u1791\u17c1\u179f\u178a\u17c3\u1793\u17b6\u1784: "
+        "<b>3,500 \u179a\u17c0\u179b/\u1782\u17b8\u17a1\u17bc\u1780\u17d2\u179a\u17b6\u1798</b>\n"
+        "\u2022 \u1798\u17d2\u1791\u17c1\u179f\u17a2\u17b6\u1785\u1798\u17cd\u179f\u178f\u17d2\u179c: "
+        "<b>6,000 \u179a\u17c0\u179b/\u1782\u17b8\u17a1\u17bc\u1780\u17d2\u179a\u17b6\u1798</b>\n\n"
+        "\U0001f4a1 \u178f\u1798\u17d2\u179b\u17c3\u17a2\u17b6\u1785\u1794\u17d2\u179a\u17c2"
+        "\u1794\u17d2\u179a\u17bd\u179b\u178f\u17b6\u1798\u1798\u17bb\u1784\u1780\u17b6\u179b "
+        "\u1793\u17b7\u1784\u1782\u17bb\u178e\u1797\u17b6\u1796\u1795\u179b\u17b7\u178f\u1795\u179b\u17d4"
     ),
     BUTTON_MARKET: (
-        "\U0001f4c8 **\u179a\u1794\u17b6\u1799\u1780\u17b6\u179a\u178e\u17cd"
-        "\u1791\u17b8\u1795\u17d2\u179f\u17b6\u179a\u17d6** "
-        "\u179f\u17d2\u1790\u17b6\u1793\u1797\u17b6\u1796\u178f\u1798\u17d2\u179b\u17c3"
-        "\u1780\u179f\u17b7\u1795\u179b\u179f\u1794\u17d2\u178f\u17b6\u17a0\u17cd"
-        "\u1793\u17c1\u17c7\u1798\u17b6\u1793\u179b\u17c6\u1793\u17b9\u1784\u179b\u17d2\u17a2 "
-        "\u1798\u17b7\u1793\u1798\u17b6\u1793\u1780\u17b6\u179a\u1794\u17d2\u179a\u17c2"
-        "\u1794\u17d2\u179a\u17bd\u179b\u1781\u17d2\u179b\u17b6\u17c6\u1784\u17a1\u17be\u1799\u17d4"
+        "\U0001f4c8 <b>\u179f\u17d2\u1790\u17b6\u1793\u1797\u17b6\u1796"
+        "\u1791\u17b8\u1795\u17d2\u179f\u17b6\u179a</b>\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\u2022 \u178f\u1798\u17d2\u179b\u17c3\u1780\u179f\u17b7\u1795\u179b\u179f\u1794\u17d2"
+        "\u178f\u17b6\u17a0\u17cd\u1793\u17c1\u17c7\u1798\u17b6\u1793\u179f\u17d2\u1790\u17c1"
+        "\u179a\u1797\u17b6\u1796\u179b\u17d2\u17a2\u17d4\n"
+        "\u2022 \u178f\u1798\u17d2\u179a\u17bc\u179c\u1780\u17b6\u179a\u1791\u17b8\u1795\u17d2\u179f\u17b6"
+        "\u179a\u1793\u17c5\u178f\u17c2\u1798\u17b6\u1793\u179b\u17d2\u17a2\u179f\u1798\u17d2\u179a\u17b6\u1794\u17cb"
+        "\u1795\u179b\u17b7\u178f\u1795\u179b\u1780\u179f\u17b7\u1780\u1798\u17d2\u1798\u17d4\n"
+        "\u2022 \u179f\u17bc\u1798\u178f\u17b6\u1798\u178a\u17b6\u1793\u1794\u1785\u17d2\u1785\u17bb\u1794\u17d2"
+        "\u1794\u1793\u17d2\u1793\u1797\u17b6\u1796\u1787\u17b6\u1794\u17d2\u179a\u1785\u17b6\u17c6\u17d4"
     ),
     BUTTON_CONTACT: (
-        "\U0001f4de **\u1780\u17d2\u179a\u17bb\u1798\u1780\u17b6\u179a\u1784\u17b6\u179a "
-        "Immortal Digital\u17d6**\n"
-        "\u179f\u17a0\u1780\u17b6\u179a \u1793\u17b7\u1784\u179a\u17b6\u1799\u1780\u17b6"
-        "\u179a\u178e\u17cd\u178f\u1798\u17d2\u179b\u17c3\u1791\u17bc\u179a\u179f\u1796\u17d2"
-        "\u1791\u17d6 012 345 678"
+        "\U0001f4de <b>\u1791\u17c6\u1793\u17b6\u1780\u17cb\u1791\u17c6\u1793\u1784</b>\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "<b>Immortal Digital</b>\n"
+        "\u2022 \u1791\u17bc\u179a\u179f\u1796\u17d2\u1791: <code>012 345 678</code>\n"
+        "\u2022 \u179f\u17c1\u179c\u17b6: \u1796\u17d0\u178f\u17cc\u1798\u17b6\u1793\u1791\u17b8\u1795\u17d2\u179f\u17b6\u179a "
+        "\u1793\u17b7\u1784\u1780\u17b6\u179a\u1782\u17b6\u17c6\u1791\u17d2\u179a\u1780\u179f\u17b7\u1780\u179a\n\n"
+        "\U0001f4ac \u179f\u17bc\u1798\u1794\u17d2\u179a\u17be <code>/help</code> "
+        "\u178a\u17be\u1798\u17d2\u1794\u17b8\u1798\u17be\u179b\u1798\u17bb\u1781\u1784\u17b6\u179a\u1791\u17b6\u17c6\u1784\u17a2\u179f\u17cb\u17d4"
     ),
 }
 
@@ -96,23 +112,29 @@ COMMAND_TO_BUTTON = {
 }
 
 GLOBAL_BOT_COMMANDS = [
-    telebot.types.BotCommand("start", "Open the main menu"),
-    telebot.types.BotCommand("help", "Show available commands"),
-    telebot.types.BotCommand("rice", "Show rice prices"),
-    telebot.types.BotCommand("pepper", "Show pepper prices"),
-    telebot.types.BotCommand("market", "Show market update"),
-    telebot.types.BotCommand("contact", "Show contact information"),
+    telebot.types.BotCommand("start", "ម៉ឺនុយមេ"),
+    telebot.types.BotCommand("help", "មើលបញ្ជីពាក្យបញ្ជា"),
+    telebot.types.BotCommand("rice", "មើលតម្លៃស្រូវ"),
+    telebot.types.BotCommand("pepper", "មើលតម្លៃម្ទេស"),
+    telebot.types.BotCommand("market", "មើលស្ថានភាពទីផ្សារ"),
+    telebot.types.BotCommand("contact", "មើលព័ត៌មានទំនាក់ទំនង"),
 ]
 
 ADMIN_BOT_COMMANDS = GLOBAL_BOT_COMMANDS + [
-    telebot.types.BotCommand("users", "Show user statistics"),
-    telebot.types.BotCommand("recentusers", "Show recent users"),
+    telebot.types.BotCommand("users", "មើលស្ថិតិអ្នកប្រើ"),
+    telebot.types.BotCommand("recentusers", "មើលអ្នកប្រើថ្មីៗ"),
 ]
 
 FALLBACK_TEXT = (
-    "\u179f\u17bc\u1798\u1787\u17d2\u179a\u17be\u179f\u179a\u17be\u179f"
-    "\u1794\u17ca\u17bc\u178f\u17bb\u1784\u1781\u17b6\u1784\u1780\u17d2\u179a\u17c4\u1798 "
-    "\u17ac\u179c\u17b6\u1799 /start \u1798\u17d2\u178f\u1784\u1791\u17c0\u178f\u17d4"
+    "\U0001f916 <b>\u1798\u17b7\u1793\u1791\u17b6\u1793\u17cb\u179f\u17d2\u1782\u17b6\u179b\u17cb"
+    "\u1796\u17b6\u1780\u17d2\u1799\u1794\u1789\u17d2\u1787\u17b6\u1793\u17c1\u17c7\u1791\u17c1</b>\n"
+    "\u179f\u17bc\u1798\u179f\u17b6\u1780\u1798\u17bd\u1799\u1780\u17d2\u1793\u17bb\u1784\u1785\u17c6\u178e\u17c4\u1798:\n"
+    "\u2022 <code>/start</code>\n"
+    "\u2022 <code>/help</code>\n"
+    "\u2022 <code>/rice</code>\n"
+    "\u2022 <code>/pepper</code>\n"
+    "\u2022 <code>/market</code>\n"
+    "\u2022 <code>/contact</code>"
 )
 
 app = Flask(__name__)
@@ -452,6 +474,16 @@ def build_main_keyboard():
     return markup
 
 
+def send_bot_message(chat_id: int, text: str, reply_markup=None) -> None:
+    bot.send_message(
+        chat_id,
+        text,
+        reply_markup=reply_markup,
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
+
+
 def _display_name(first_name: str, username: str) -> str:
     if first_name:
         return first_name
@@ -460,43 +492,66 @@ def _display_name(first_name: str, username: str) -> str:
     return "\u1780\u179f\u17b7\u1780\u179a"
 
 
+def _format_datetime(value) -> str:
+    if not value:
+        return "មិនទាន់មាន"
+    if hasattr(value, "strftime"):
+        return value.strftime("%d-%m-%Y %H:%M")
+    return escape(str(value))
+
+
+def _format_gender(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized in {"male", "m"}:
+        return "ប្រុស"
+    if normalized in {"female", "f"}:
+        return "ស្រី"
+    if normalized in {"other"}:
+        return "ផ្សេងៗ"
+    return "មិនទាន់កំណត់"
+
+
 def build_help_text(user_state: dict) -> str:
     lines = [
-        "\U0001f4cc Available Commands",
-        "/start - Open the main menu",
-        "/help - Show this help message",
-        "/rice - Show rice prices",
-        "/pepper - Show pepper prices",
-        "/market - Show market updates",
-        "/contact - Show contact information",
+        "\U0001f4cc <b>បញ្ជីពាក្យបញ្ជា</b>",
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501",
+        "\u2022 <code>/start</code> - បើកម៉ឺនុយមេ",
+        "\u2022 <code>/help</code> - មើលបញ្ជីពាក្យបញ្ជាទាំងអស់",
+        "\u2022 <code>/rice</code> - មើលតម្លៃស្រូវ",
+        "\u2022 <code>/pepper</code> - មើលតម្លៃម្ទេស",
+        "\u2022 <code>/market</code> - មើលស្ថានភាពទីផ្សារ",
+        "\u2022 <code>/contact</code> - មើលព័ត៌មានទំនាក់ទំនង",
     ]
     if user_state.get("is_admin"):
         lines.extend(
             [
-                "/users - Show user statistics",
-                "/recentusers - Show recent users",
+                "",
+                "\U0001f6e1\ufe0f <b>ពាក្យបញ្ជាសម្រាប់អ្នកគ្រប់គ្រង</b>",
+                "\u2022 <code>/users</code> - មើលស្ថិតិអ្នកប្រើ",
+                "\u2022 <code>/recentusers</code> - មើលអ្នកប្រើថ្មីៗ",
             ]
         )
     return "\n".join(lines)
 
 
 def send_welcome(chat_id: int, user_name: str, user_state: dict) -> None:
+    safe_user_name = escape(user_name)
     if not user_state.get("db_enabled"):
         intro = (
-            f"\U0001f44b \u179f\u17bd\u179f\u17d2\u178f\u17b8 {user_name}! "
+            f"\U0001f44b \u179f\u17bd\u179f\u17d2\u178f\u17b8 {safe_user_name}! "
             "\u179f\u17d2\u179c\u17b6\u1782\u1798\u1793\u17cd\u1798\u1780\u1780\u17b6\u1793\u17cb "
             "Agri-Trade Bot!\n\n"
         )
     elif user_state.get("is_new_user"):
         intro = (
-            f"\U0001f44b \u179f\u17bd\u179f\u17d2\u178f\u17b8 {user_name}! "
+            f"\U0001f44b \u179f\u17bd\u179f\u17d2\u178f\u17b8 {safe_user_name}! "
             "\u17a2\u17d2\u1793\u1780\u1782\u17ba\u1787\u17b6\u17a2\u17d2\u1793\u1780"
             "\u1794\u17d2\u179a\u17be\u1790\u17d2\u1798\u17b8 \u179f\u17d2\u179c\u17b6"
             "\u1782\u1798\u1793\u17cd\u1798\u1780\u1780\u17b6\u1793\u17cb Agri-Trade Bot!\n\n"
         )
     else:
         intro = (
-            f"\U0001f44b \u179f\u17bd\u179f\u17d2\u178f\u17b8 {user_name}! "
+            f"\U0001f44b \u179f\u17bd\u179f\u17d2\u178f\u17b8 {safe_user_name}! "
             "\u179f\u17c2\u179c\u1782\u1798\u1793\u17cd\u1798\u1780\u179c\u17b7\u1789 "
             "Agri-Trade Bot!\n\n"
         )
@@ -504,57 +559,85 @@ def send_welcome(chat_id: int, user_name: str, user_state: dict) -> None:
     admin_note = ""
     if user_state.get("is_admin"):
         admin_note = (
-            "\U0001f6e1\ufe0f Admin mode active.\n"
-            "Commands: /users , /recentusers\n\n"
+            "\U0001f6e1\ufe0f <b>របៀបអ្នកគ្រប់គ្រងកំពុងដំណើរការ</b>\n"
+            "\u2022 <code>/users</code>\n"
+            "\u2022 <code>/recentusers</code>\n\n"
         )
 
     welcome_text = (
-        f"{intro}{admin_note}"
-        "\u1794\u17d2\u179a\u1796\u17d0\u1793\u17d2\u1792 Agri-Trade Bot "
+        f"{intro}"
+        "\U0001f33f <b>Agri-Trade Bot</b>\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\u1794\u17d2\u179a\u1796\u17d0\u1793\u17d2\u1792\u1796\u17d0\u178f\u17cc\u1798\u17b6\u1793"
+        "\u1791\u17b8\u1795\u17d2\u179f\u17b6\u179a\u1780\u179f\u17b7\u1780\u179a "
         "\u1795\u17d2\u179b\u17bc\u179c\u1780\u17b6\u179a\u179a\u1794\u179f\u17cb Immortal Digital!\n\n"
-        "\u179f\u17bc\u1798\u1787\u17d2\u179a\u17be\u179f\u179a\u17be\u179f\u179f\u17c1"
-        "\u179c\u17b6\u1780\u1798\u17d2\u1798\u1795\u17d2\u1793\u17c2\u1780\u1781\u17b6"
-        "\u1784\u1780\u17d2\u179a\u17c4\u1798\u17d6"
+        "\U0001f680 <b>ពាក្យបញ្ជារហ័ស</b>\n"
+        "\u2022 <code>/rice</code>  \u1798\u17be\u179b\u178f\u1798\u17d2\u179b\u17c3\u179f\u17d2\u179a\u17bc\u179c\n"
+        "\u2022 <code>/pepper</code>  \u1798\u17be\u179b\u178f\u1798\u17d2\u179b\u17c3\u1798\u17d2\u1791\u17c1\u179f\n"
+        "\u2022 <code>/market</code>  \u1798\u17be\u179b\u179f\u17d2\u1790\u17b6\u1793\u1797\u17b6\u1796\u1791\u17b8\u1795\u17d2\u179f\u17b6\u179a\n"
+        "\u2022 <code>/contact</code>  \u1780\u17b6\u179a\u1791\u17c6\u1793\u17b6\u1780\u17cb\u1791\u17c6\u1793\u1784\n"
+        "\u2022 <code>/help</code>  \u1798\u17be\u179b\u1794\u1789\u17d2\u1787\u17b8\u1796\u17b6\u1780\u17d2\u1799\u1794\u1789\u17d2\u1787\u17b6\u1791\u17b6\u17c6\u1784\u17a2\u179f\u17cb\n\n"
+        f"{admin_note}"
+        "\U0001f447 \u179f\u17bc\u1798\u1787\u17d2\u179a\u17be\u179f\u1794\u17ca\u17bc\u178f\u17bb\u1784"
+        "\u1781\u17b6\u1784\u1780\u17d2\u179a\u17c4\u1798 \u17ac\u1794\u17d2\u179a\u17be slash command \u1781\u17b6\u1784\u179b\u17be\u17d4"
     )
-    bot.send_message(chat_id, welcome_text, reply_markup=build_main_keyboard())
+    send_bot_message(chat_id, welcome_text, reply_markup=build_main_keyboard())
 
 
 def send_admin_stats(chat_id: int) -> None:
     stats = get_user_stats()
     if not stats:
-        bot.send_message(
+        send_bot_message(
             chat_id,
-            "MySQL user database is not ready yet. Please check database settings.",
+            "\u26a0\ufe0f <b>\u1798\u17b7\u1793\u1791\u17b6\u1793\u17cb\u17a2\u17b6\u1785"
+            "\u1794\u17be\u1780\u1798\u17bc\u179b\u178a\u17d2\u178b\u17b6\u1793\u1791\u17b7\u1793\u17d2\u1793\u1793\u17d0\u1799"
+            "\u17a2\u17d2\u1793\u1780\u1794\u17d2\u179a\u17be\u1794\u17b6\u1793\u1791\u17c1</b>\n"
+            "\u179f\u17bc\u1798\u178f\u17d2\u179a\u17bd\u178f\u1796\u17b7\u1793\u17b7\u178f\u17d2\u1799"
+            "\u1780\u17b6\u179a\u1780\u17c6\u178e\u178f\u17cb database \u1798\u17d2\u178f\u1784\u1791\u17c0\u178f\u17d4",
         )
         return
 
     stats_text = (
-        "\U0001f465 User Stats\n"
-        f"- Total users: {stats['total_users']}\n"
-        f"- Joined today: {stats['joined_today']}\n"
-        f"- Admin users: {stats['admin_users']}"
+        "\U0001f465 <b>\u179f\u17d2\u1790\u17b7\u178f\u17b7\u17a2\u17d2\u1793\u1780\u1794\u17d2\u179a\u17be</b>\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        f"\u2022 \u17a2\u17d2\u1793\u1780\u1794\u17d2\u179a\u17be\u179f\u179a\u17bb\u1794: <b>{stats['total_users']}</b>\n"
+        f"\u2022 \u1785\u17bc\u179b\u1794\u17d2\u179a\u17be\u1790\u17d2\u1784\u17c3\u1793\u17c1\u17c7: <b>{stats['joined_today']}</b>\n"
+        f"\u2022 \u17a2\u17d2\u1793\u1780\u1782\u17d2\u179a\u1794\u17cb\u1782\u17d2\u179a\u1784: <b>{stats['admin_users']}</b>"
     )
-    bot.send_message(chat_id, stats_text)
+    send_bot_message(chat_id, stats_text)
 
 
 def send_recent_users(chat_id: int) -> None:
     recent_users = get_recent_users()
     if not recent_users:
-        bot.send_message(
+        send_bot_message(
             chat_id,
-            "No recent users found, or MySQL user database is not ready yet.",
+            "\U0001f4ed <b>\u1798\u17b7\u1793\u1791\u17b6\u1793\u17cb\u1798\u17b6\u1793"
+            "\u1794\u1789\u17d2\u1787\u17b8\u17a2\u17d2\u1793\u1780\u1794\u17d2\u179a\u17be\u1790\u17d2\u1798\u17b8\u17d7</b>\n"
+            "\u1798\u17bc\u179b\u178a\u17d2\u178b\u17b6\u1793\u1791\u17b7\u1793\u17d2\u1793\u1793\u17d0\u1799"
+            "\u17a2\u17b6\u1785\u1793\u17c5\u1791\u1791\u17c1 \u17ac \u1798\u17b7\u1793\u1791\u17b6\u1793\u17cb"
+            "\u179a\u17bd\u1785\u179a\u17b6\u179b\u17cb\u1793\u17c5\u17a1\u17be\u1799\u1791\u17c1\u17d4",
         )
         return
 
-    lines = ["\U0001f4cb Recent Users"]
-    for user in recent_users:
-        name = user["first_name"] or "Unknown"
-        admin_badge = " [admin]" if user["chat_id"] in ADMIN_USER_IDS else ""
+    lines = [
+        "\U0001f4cb <b>\u17a2\u17d2\u1793\u1780\u1794\u17d2\u179a\u17be\u1790\u17d2\u1798\u17b8\u17d7</b>",
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501",
+    ]
+    for index, user in enumerate(recent_users, start=1):
+        name = escape(user["first_name"] or "\u1798\u17b7\u1793\u1791\u17b6\u1793\u17cb\u1798\u17b6\u1793\u1788\u17d2\u1798\u17c4\u17c7")
+        admin_badge = " <b>[អ្នកគ្រប់គ្រង]</b>" if user["chat_id"] in ADMIN_USER_IDS else ""
+        gender = _format_gender(user["gender"] or DEFAULT_GENDER)
+        joined_date = _format_datetime(user["joined_date"])
         lines.append(
-            f"- {name}{admin_badge}: gender={user['gender']}, joined={user['joined_date']}"
+            f"{index}. <b>{name}</b>{admin_badge}\n"
+            f"   \u2022 \u1797\u17c1\u1791: {gender}\n"
+            f"   \u2022 \u1785\u17bc\u179b\u1794\u17d2\u179a\u17be: <code>{joined_date}</code>"
         )
+        if index != len(recent_users):
+            lines.append("")
 
-    bot.send_message(chat_id, "\n".join(lines))
+    send_bot_message(chat_id, "\n".join(lines))
 
 
 def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -> None:
@@ -566,7 +649,7 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
         return
 
     if command == "/help":
-        bot.send_message(
+        send_bot_message(
             chat_id,
             build_help_text(user_state),
             reply_markup=build_main_keyboard(),
@@ -574,25 +657,37 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
         return
 
     if command in COMMAND_TO_BUTTON:
-        bot.send_message(chat_id, BUTTON_RESPONSES[COMMAND_TO_BUTTON[command]])
+        send_bot_message(chat_id, BUTTON_RESPONSES[COMMAND_TO_BUTTON[command]])
         return
 
     if command == "/users":
         if user_state.get("is_admin"):
             send_admin_stats(chat_id)
         else:
-            bot.send_message(chat_id, "This command is for admins only.")
+            send_bot_message(
+                chat_id,
+                "\u26d4 <b>\u179f\u1798\u17d2\u179a\u17b6\u1794\u17cb\u17a2\u17d2\u1793\u1780"
+                "\u1782\u17d2\u179a\u1794\u17cb\u1782\u17d2\u179a\u1784\u1794\u17c9\u17bb\u178e\u17d2\u178e\u17c4\u17c7</b>\n"
+                "\u1796\u17b6\u1780\u17d2\u1799\u1794\u1789\u17d2\u1787\u17b6\u1793\u17c1\u17c7\u17a2\u17b6\u1785"
+                "\u1794\u17d2\u179a\u17be\u1794\u17b6\u1793\u178f\u17c2\u178a\u17c4\u1799\u17a2\u17d2\u1793\u1780\u1782\u17d2\u179a\u1794\u17cb\u1782\u17d2\u179a\u1784\u1794\u17c9\u17bb\u178e\u17d2\u178e\u17c4\u17c7\u17d4",
+            )
         return
 
     if command == "/recentusers":
         if user_state.get("is_admin"):
             send_recent_users(chat_id)
         else:
-            bot.send_message(chat_id, "This command is for admins only.")
+            send_bot_message(
+                chat_id,
+                "\u26d4 <b>\u179f\u1798\u17d2\u179a\u17b6\u1794\u17cb\u17a2\u17d2\u1793\u1780"
+                "\u1782\u17d2\u179a\u1794\u17cb\u1782\u17d2\u179a\u1784\u1794\u17c9\u17bb\u178e\u17d2\u178e\u17c4\u17c7</b>\n"
+                "\u1796\u17b6\u1780\u17d2\u1799\u1794\u1789\u17d2\u1787\u17b6\u1793\u17c1\u17c7\u17a2\u17b6\u1785"
+                "\u1794\u17d2\u179a\u17be\u1794\u17b6\u1793\u178f\u17c2\u178a\u17c4\u1799\u17a2\u17d2\u1793\u1780\u1782\u17d2\u179a\u1794\u17cb\u1782\u17d2\u179a\u1784\u1794\u17c9\u17bb\u178e\u17d2\u178e\u17c4\u17c7\u17d4",
+            )
         return
 
     response = BUTTON_RESPONSES.get(text, FALLBACK_TEXT)
-    bot.send_message(chat_id, response)
+    send_bot_message(chat_id, response)
 
 
 @app.post(WEBHOOK_PATH)
