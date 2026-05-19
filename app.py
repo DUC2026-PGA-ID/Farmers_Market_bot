@@ -73,7 +73,7 @@ FALLBACK_TEXT = (
 )
 
 app = Flask(__name__)
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
+bot = telebot.TeleBot(BOT_TOKEN)
 
 _webhook_lock = Lock()
 _webhook_configured = False
@@ -150,19 +150,20 @@ def _validate_telegram_request() -> None:
             abort(403)
 
 
-@app.post(WEBHOOK_PATH)
-def telegram_webhook():
-    _validate_telegram_request()
+def build_main_keyboard():
+    markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    markup.add(
+        telebot.types.KeyboardButton(BUTTON_RICE),
+        telebot.types.KeyboardButton(BUTTON_PEPPER),
+    )
+    markup.add(
+        telebot.types.KeyboardButton(BUTTON_MARKET),
+        telebot.types.KeyboardButton(BUTTON_CONTACT),
+    )
+    return markup
 
-    update = telebot.types.Update.de_json(request.get_data().decode("utf-8"))
-    bot.process_new_updates([update])
-    return "OK", 200
 
-
-@bot.message_handler(commands=["start"])
-def send_welcome(message):
-    user_name = message.from_user.first_name or "\u1780\u179f\u17b7\u1780\u179a"
-
+def send_welcome(chat_id: int, user_name: str) -> None:
     welcome_text = (
         f"\U0001f44b \u179f\u17bd\u179f\u17d2\u178f\u17b8/\u1787\u1798\u17d2\u179a"
         f"\u17b6\u1794\u179f\u17bd\u179a {user_name}! \u179f\u17d2\u179c\u17b6\u1782"
@@ -173,24 +174,46 @@ def send_welcome(message):
         "\u179c\u17b6\u1780\u1798\u17d2\u1798\u1795\u17d2\u1793\u17c2\u1780\u1781\u17b6"
         "\u1784\u1780\u17d2\u179a\u17c4\u1798\u17d6"
     )
-
-    markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    markup.add(
-        telebot.types.KeyboardButton(BUTTON_RICE),
-        telebot.types.KeyboardButton(BUTTON_PEPPER),
-    )
-    markup.add(
-        telebot.types.KeyboardButton(BUTTON_MARKET),
-        telebot.types.KeyboardButton(BUTTON_CONTACT),
-    )
-
-    bot.send_message(message.chat.id, welcome_text, reply_markup=markup)
+    bot.send_message(chat_id, welcome_text, reply_markup=build_main_keyboard())
 
 
-@bot.message_handler(func=lambda message: True)
-def handle_buttons(message):
-    response = BUTTON_RESPONSES.get(message.text, FALLBACK_TEXT)
-    bot.reply_to(message, response)
+def handle_text_message(chat_id: int, text: str, first_name: str) -> None:
+    command = text.split()[0].split("@")[0].lower() if text else ""
+    if command == "/start":
+        send_welcome(chat_id, first_name or "\u1780\u179f\u17b7\u1780\u179a")
+        return
+
+    response = BUTTON_RESPONSES.get(text, FALLBACK_TEXT)
+    bot.send_message(chat_id, response)
+
+
+@app.post(WEBHOOK_PATH)
+def telegram_webhook():
+    _validate_telegram_request()
+
+    update = request.get_json(silent=True) or {}
+    message = update.get("message") or update.get("edited_message")
+    if not message:
+        return "OK", 200
+
+    chat = message.get("chat", {})
+    from_user = message.get("from", {})
+    chat_id = chat.get("id")
+    text = message.get("text", "")
+    first_name = from_user.get("first_name", "")
+
+    if not chat_id:
+        return "OK", 200
+
+    logger.info("Incoming Telegram message: chat_id=%s text=%r", chat_id, text)
+
+    try:
+        handle_text_message(chat_id, text, first_name)
+    except Exception:
+        logger.exception("Failed to handle Telegram message.")
+        return "ERROR", 500
+
+    return "OK", 200
 
 
 @app.get("/")
