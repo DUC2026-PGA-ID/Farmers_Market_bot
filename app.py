@@ -199,6 +199,17 @@ def index():
     )
 
 
+@app.get("/setup-webhook")
+def setup_webhook():
+    configured = configure_webhook(force=True)
+    return jsonify(
+        {
+            "ok": configured,
+            "desired_webhook_url": _desired_webhook_url(),
+        }
+    ), (200 if configured else 500)
+
+
 @app.get("/healthz")
 def healthz():
     return jsonify({"ok": True}), 200
