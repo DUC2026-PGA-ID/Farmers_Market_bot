@@ -88,6 +88,27 @@ BUTTON_RESPONSES = {
     ),
 }
 
+COMMAND_TO_BUTTON = {
+    "/rice": BUTTON_RICE,
+    "/pepper": BUTTON_PEPPER,
+    "/market": BUTTON_MARKET,
+    "/contact": BUTTON_CONTACT,
+}
+
+GLOBAL_BOT_COMMANDS = [
+    telebot.types.BotCommand("start", "Open the main menu"),
+    telebot.types.BotCommand("help", "Show available commands"),
+    telebot.types.BotCommand("rice", "Show rice prices"),
+    telebot.types.BotCommand("pepper", "Show pepper prices"),
+    telebot.types.BotCommand("market", "Show market update"),
+    telebot.types.BotCommand("contact", "Show contact information"),
+]
+
+ADMIN_BOT_COMMANDS = GLOBAL_BOT_COMMANDS + [
+    telebot.types.BotCommand("users", "Show user statistics"),
+    telebot.types.BotCommand("recentusers", "Show recent users"),
+]
+
 FALLBACK_TEXT = (
     "\u179f\u17bc\u1798\u1787\u17d2\u179a\u17be\u179f\u179a\u17be\u179f"
     "\u1794\u17ca\u17bc\u178f\u17bb\u1784\u1781\u17b6\u1784\u1780\u17d2\u179a\u17c4\u1798 "
@@ -100,6 +121,8 @@ bot = telebot.TeleBot(BOT_TOKEN)
 _webhook_lock = Lock()
 _webhook_configured = False
 _webhook_skip_logged = False
+_commands_lock = Lock()
+_commands_configured = False
 _database_lock = Lock()
 _database_ready = False
 _database_skip_logged = False
@@ -375,6 +398,30 @@ def configure_webhook(force: bool = False) -> bool:
             return False
 
 
+def configure_bot_commands(force: bool = False) -> bool:
+    global _commands_configured
+
+    with _commands_lock:
+        if _commands_configured and not force:
+            return True
+
+        try:
+            bot.set_my_commands(GLOBAL_BOT_COMMANDS)
+            for admin_user_id in ADMIN_USER_IDS:
+                bot.set_my_commands(
+                    ADMIN_BOT_COMMANDS,
+                    scope=telebot.types.BotCommandScopeChat(admin_user_id),
+                )
+            _commands_configured = True
+            logger.info("Telegram command menu configured.")
+            return True
+        except Exception:
+            logger.exception("Unable to configure Telegram command menu.")
+            return False
+
+
+configure_bot_commands()
+
 if AUTO_SET_WEBHOOK:
     configure_webhook()
 
@@ -411,6 +458,26 @@ def _display_name(first_name: str, username: str) -> str:
     if username:
         return f"@{username}"
     return "\u1780\u179f\u17b7\u1780\u179a"
+
+
+def build_help_text(user_state: dict) -> str:
+    lines = [
+        "\U0001f4cc Available Commands",
+        "/start - Open the main menu",
+        "/help - Show this help message",
+        "/rice - Show rice prices",
+        "/pepper - Show pepper prices",
+        "/market - Show market updates",
+        "/contact - Show contact information",
+    ]
+    if user_state.get("is_admin"):
+        lines.extend(
+            [
+                "/users - Show user statistics",
+                "/recentusers - Show recent users",
+            ]
+        )
+    return "\n".join(lines)
 
 
 def send_welcome(chat_id: int, user_name: str, user_state: dict) -> None:
@@ -498,6 +565,18 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
         send_welcome(chat_id, user_name, user_state)
         return
 
+    if command == "/help":
+        bot.send_message(
+            chat_id,
+            build_help_text(user_state),
+            reply_markup=build_main_keyboard(),
+        )
+        return
+
+    if command in COMMAND_TO_BUTTON:
+        bot.send_message(chat_id, BUTTON_RESPONSES[COMMAND_TO_BUTTON[command]])
+        return
+
     if command == "/users":
         if user_state.get("is_admin"):
             send_admin_stats(chat_id)
@@ -564,13 +643,15 @@ def favicon():
 
 @app.get("/setup-webhook")
 def setup_webhook():
+    commands_configured = configure_bot_commands(force=True)
     configured = configure_webhook(force=True)
     return jsonify(
         {
-            "ok": configured,
+            "ok": configured and commands_configured,
+            "commands_ok": commands_configured,
             "desired_webhook_url": _desired_webhook_url(),
         }
-    ), (200 if configured else 500)
+    ), (200 if configured and commands_configured else 500)
 
 
 @app.get("/healthz")
