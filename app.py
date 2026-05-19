@@ -111,7 +111,12 @@ def configure_webhook(force: bool = False) -> bool:
             return True
 
         try:
-            bot.remove_webhook()
+            current_webhook = bot.get_webhook_info()
+            if current_webhook and current_webhook.url == webhook_url and not force:
+                _webhook_configured = True
+                logger.info("Telegram webhook already configured: %s", webhook_url)
+                return True
+
             bot.set_webhook(
                 url=webhook_url,
                 secret_token=WEBHOOK_SECRET or None,
@@ -124,10 +129,8 @@ def configure_webhook(force: bool = False) -> bool:
             return False
 
 
-@app.before_request
-def ensure_webhook():
-    if AUTO_SET_WEBHOOK and request.endpoint != "telegram_webhook":
-        configure_webhook()
+if AUTO_SET_WEBHOOK:
+    configure_webhook()
 
 
 def _validate_telegram_request() -> None:
