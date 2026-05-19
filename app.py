@@ -19,6 +19,8 @@ if not BOT_TOKEN:
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 WEBHOOK_PATH = "/" + os.getenv("WEBHOOK_PATH", "/telegram/webhook").strip("/")
 AUTO_SET_WEBHOOK = os.getenv("AUTO_SET_WEBHOOK", "true").lower() == "true"
+# Telegram secret tokens only allow a narrow character set, so we derive
+# a stable header-safe token from the configured secret.
 TELEGRAM_SECRET_TOKEN = (
     hashlib.sha256(WEBHOOK_SECRET.encode("utf-8")).hexdigest()
     if WEBHOOK_SECRET
@@ -226,6 +228,11 @@ def index():
             "webhook_path": WEBHOOK_PATH,
         }
     )
+
+
+@app.get("/favicon.ico")
+def favicon():
+    return "", 204
 
 
 @app.get("/setup-webhook")
