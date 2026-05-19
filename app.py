@@ -511,6 +511,17 @@ def _format_gender(value: str) -> str:
     return "មិនទាន់កំណត់"
 
 
+def _user_icon(is_admin: bool, gender_value: str) -> str:
+    if is_admin:
+        return "\U0001f6e1\ufe0f"
+    normalized = (gender_value or "").strip().lower()
+    if normalized in {"male", "m"}:
+        return "\U0001f468"
+    if normalized in {"female", "f"}:
+        return "\U0001f469"
+    return "\U0001f464"
+
+
 def build_help_text(user_state: dict) -> str:
     lines = [
         "\U0001f4cc <b>បញ្ជីពាក្យបញ្ជា</b>",
@@ -593,16 +604,19 @@ def send_admin_stats(chat_id: int) -> None:
             "\u1794\u17be\u1780\u1798\u17bc\u179b\u178a\u17d2\u178b\u17b6\u1793\u1791\u17b7\u1793\u17d2\u1793\u1793\u17d0\u1799"
             "\u17a2\u17d2\u1793\u1780\u1794\u17d2\u179a\u17be\u1794\u17b6\u1793\u1791\u17c1</b>\n"
             "\u179f\u17bc\u1798\u178f\u17d2\u179a\u17bd\u178f\u1796\u17b7\u1793\u17b7\u178f\u17d2\u1799"
-            "\u1780\u17b6\u179a\u1780\u17c6\u178e\u178f\u17cb database \u1798\u17d2\u178f\u1784\u1791\u17c0\u178f\u17d4",
+            "\u1780\u17b6\u179a\u1780\u17c6\u178e\u178f\u17cb\u1798\u17bc\u179b\u178a\u17d2\u178b\u17b6\u1793"
+            "\u1791\u17b7\u1793\u17d2\u1793\u1793\u17d0\u1799 \u1798\u17d2\u178f\u1784\u1791\u17c0\u178f\u17d4",
         )
         return
 
     stats_text = (
         "\U0001f465 <b>\u179f\u17d2\u1790\u17b7\u178f\u17b7\u17a2\u17d2\u1793\u1780\u1794\u17d2\u179a\u17be</b>\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-        f"\u2022 \u17a2\u17d2\u1793\u1780\u1794\u17d2\u179a\u17be\u179f\u179a\u17bb\u1794: <b>{stats['total_users']}</b>\n"
-        f"\u2022 \u1785\u17bc\u179b\u1794\u17d2\u179a\u17be\u1790\u17d2\u1784\u17c3\u1793\u17c1\u17c7: <b>{stats['joined_today']}</b>\n"
-        f"\u2022 \u17a2\u17d2\u1793\u1780\u1782\u17d2\u179a\u1794\u17cb\u1782\u17d2\u179a\u1784: <b>{stats['admin_users']}</b>"
+        f"\U0001f539 \u17a2\u17d2\u1793\u1780\u1794\u17d2\u179a\u17be\u179f\u179a\u17bb\u1794: <b>{stats['total_users']}</b>\n"
+        f"\U0001f7e2 \u1785\u17bc\u179b\u1794\u17d2\u179a\u17be\u1790\u17d2\u1784\u17c3\u1793\u17c1\u17c7: <b>{stats['joined_today']}</b>\n"
+        f"\U0001f6e1\ufe0f \u17a2\u17d2\u1793\u1780\u1782\u17d2\u179a\u1794\u17cb\u1782\u17d2\u179a\u1784: <b>{stats['admin_users']}</b>\n\n"
+        "\U0001f4a1 \u1794\u17d2\u179a\u17be <code>/recentusers</code> "
+        "\u178a\u17be\u1798\u17d2\u1794\u17b8\u1798\u17be\u179b\u1794\u1789\u17d2\u1787\u17b8\u1790\u17d2\u1798\u17b8\u17d7\u1794\u17d2\u179a\u1785\u17b6\u17c6\u17d4"
     )
     send_bot_message(chat_id, stats_text)
 
@@ -626,11 +640,14 @@ def send_recent_users(chat_id: int) -> None:
     ]
     for index, user in enumerate(recent_users, start=1):
         name = escape(user["first_name"] or "\u1798\u17b7\u1793\u1791\u17b6\u1793\u17cb\u1798\u17b6\u1793\u1788\u17d2\u1798\u17c4\u17c7")
-        admin_badge = " <b>[អ្នកគ្រប់គ្រង]</b>" if user["chat_id"] in ADMIN_USER_IDS else ""
-        gender = _format_gender(user["gender"] or DEFAULT_GENDER)
+        is_admin_user = user["chat_id"] in ADMIN_USER_IDS
+        admin_badge = " <b>[អ្នកគ្រប់គ្រង]</b>" if is_admin_user else ""
+        gender_value = user["gender"] or DEFAULT_GENDER
+        gender = _format_gender(gender_value)
+        user_icon = _user_icon(is_admin_user, gender_value)
         joined_date = _format_datetime(user["joined_date"])
         lines.append(
-            f"{index}. <b>{name}</b>{admin_badge}\n"
+            f"{user_icon} <b>#{index} {name}</b>{admin_badge}\n"
             f"   \u2022 \u1797\u17c1\u1791: {gender}\n"
             f"   \u2022 \u1785\u17bc\u179b\u1794\u17d2\u179a\u17be: <code>{joined_date}</code>"
         )
