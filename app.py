@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 from threading import Lock
@@ -18,6 +19,11 @@ if not BOT_TOKEN:
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 WEBHOOK_PATH = "/" + os.getenv("WEBHOOK_PATH", "/telegram/webhook").strip("/")
 AUTO_SET_WEBHOOK = os.getenv("AUTO_SET_WEBHOOK", "true").lower() == "true"
+TELEGRAM_SECRET_TOKEN = (
+    hashlib.sha256(WEBHOOK_SECRET.encode("utf-8")).hexdigest()
+    if WEBHOOK_SECRET
+    else ""
+)
 
 BUTTON_RICE = "\U0001f33e \u178f\u1798\u17d2\u179b\u17c3\u179f\u17d2\u179a\u17bc\u179c"
 BUTTON_PEPPER = "\U0001f336\ufe0f \u178f\u1798\u17d2\u179b\u17c3\u1798\u17d2\u1791\u17c1\u179f"
@@ -119,7 +125,7 @@ def configure_webhook(force: bool = False) -> bool:
 
             bot.set_webhook(
                 url=webhook_url,
-                secret_token=WEBHOOK_SECRET or None,
+                secret_token=TELEGRAM_SECRET_TOKEN or None,
             )
             _webhook_configured = True
             logger.info("Telegram webhook configured: %s", webhook_url)
@@ -138,9 +144,9 @@ def _validate_telegram_request() -> None:
     if not content_type.startswith("application/json"):
         abort(403)
 
-    if WEBHOOK_SECRET:
+    if TELEGRAM_SECRET_TOKEN:
         secret_header = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-        if secret_header != WEBHOOK_SECRET:
+        if secret_header != TELEGRAM_SECRET_TOKEN:
             abort(403)
 
 
