@@ -180,7 +180,7 @@ def ensure_database_ready() -> bool:
                     chat_id BIGINT NOT NULL,
                     first_name VARCHAR(255) NOT NULL,
                     gender VARCHAR(32) NOT NULL DEFAULT 'unknown',
-                    joined_date DATETIME NOT NULL DEFAULT UTC_TIMESTAMP(),
+                    joined_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (id),
                     UNIQUE KEY uq_users_chat_id (chat_id)
                 )
