@@ -1058,7 +1058,10 @@ def send_recent_users(chat_id: int) -> None:
 
 
 def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -> None:
-    command = text.split()[0].split("@")[0].lower() if text else ""
+    normalized_text = (text or "").strip()
+    command = ""
+    if normalized_text.startswith("/"):
+        command = normalized_text.split()[0].split("@")[0].lower()
     user_name = _display_name(user.get("first_name", ""), user.get("username", ""))
     onboarding_step = _next_onboarding_step(user_state)
 
