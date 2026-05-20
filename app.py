@@ -39,6 +39,8 @@ MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
 MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "")
 MYSQL_USER = os.getenv("MYSQL_USER", "")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
+# Set MYSQL_SSL=true for cloud databases like Aiven that require SSL
+MYSQL_SSL = os.getenv("MYSQL_SSL", "false").lower() == "true"
 ADMIN_USER_IDS = {
     int(value.strip())
     for value in os.getenv("ADMIN_USER_IDS", "").split(",")
@@ -235,6 +237,17 @@ def _mysql_is_configured() -> bool:
     return all([MYSQL_HOST.strip(), MYSQL_DATABASE.strip(), MYSQL_USER.strip()])
 
 
+def _mysql_ssl_args() -> dict:
+    """Return SSL kwargs for MySQL connections when MYSQL_SSL=true.
+    Aiven and other cloud providers require SSL but ship their own CA,
+    so we enable SSL without verifying the server certificate — the
+    connection is still encrypted, just not CA-pinned.
+    """
+    if not MYSQL_SSL:
+        return {}
+    return {"ssl_disabled": False, "ssl_verify_cert": False}
+
+
 def _get_db_pool():
     """Return the shared connection pool, creating it once if needed."""
     global _db_pool
@@ -248,15 +261,18 @@ def _get_db_pool():
         try:
             _db_pool = MySQLConnectionPool(
                 pool_name="farmers_pool",
-                pool_size=5,          # keep 5 connections open & ready
+                pool_size=5,
                 pool_reset_session=True,
                 host=MYSQL_HOST,
                 port=MYSQL_PORT,
                 database=MYSQL_DATABASE,
                 user=MYSQL_USER,
                 password=MYSQL_PASSWORD,
+                **_mysql_ssl_args(),
             )
-            logger.info("MySQL connection pool created (size=5).")
+            logger.info(
+                "MySQL connection pool created (size=5, ssl=%s).", MYSQL_SSL
+            )
         except MySQLError:
             logger.exception("Failed to create MySQL connection pool.")
         return _db_pool
@@ -276,6 +292,7 @@ def _get_db_connection():
         database=MYSQL_DATABASE,
         user=MYSQL_USER,
         password=MYSQL_PASSWORD,
+        **_mysql_ssl_args(),
     )
 
 
