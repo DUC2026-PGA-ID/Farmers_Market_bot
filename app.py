@@ -199,6 +199,13 @@ _database_skip_logged = False
 _db_pool = None
 _db_pool_lock = Lock()
 
+# In-memory user state cache — skip DB lookup for repeat messages
+# Format: { chat_id: {"state": {...}, "ts": time.monotonic()} }
+import time as _time
+_user_cache: dict = {}
+_user_cache_lock = Lock()
+_USER_CACHE_TTL = 300  # seconds (5 minutes)
+
 
 def _public_base_url() -> str:
     explicit_url = os.getenv("WEBHOOK_URL")
@@ -358,7 +365,20 @@ def register_or_update_user(message: dict) -> dict:
         "onboarding_step": ONBOARDING_STEP_FULL_NAME,
     }
 
-    if not user_id or not chat_id or not ensure_database_ready():
+    if not user_id or not chat_id:
+        return state
+
+    # --- Cache read: skip DB if we have a fresh state for this user ---
+    with _user_cache_lock:
+        cached = _user_cache.get(chat_id)
+        if cached and (_time.monotonic() - cached["ts"]) < _USER_CACHE_TTL:
+            cached_state = dict(cached["state"])
+            # Always reflect current admin status
+            cached_state["is_admin"] = is_admin
+            cached_state["is_new_user"] = False  # returning user by definition
+            return cached_state
+
+    if not ensure_database_ready():
         return state
 
     connection = None
@@ -432,7 +452,11 @@ def register_or_update_user(message: dict) -> dict:
             state["first_name"] = latest_first_name
             state["onboarding_step"] = ONBOARDING_STEP_FULL_NAME
 
-        return _normalize_onboarding_state(state)
+        result = _normalize_onboarding_state(state)
+        # --- Cache write: store fresh state so next message is instant ---
+        with _user_cache_lock:
+            _user_cache[chat_id] = {"state": dict(result), "ts": _time.monotonic()}
+        return result
     except MySQLError:
         logger.exception("Unable to save Telegram user to MySQL.")
         return state
@@ -460,6 +484,10 @@ def update_user_profile(chat_id: int, **fields) -> bool:
     }
     if not sanitized_fields:
         return False
+
+    # Invalidate cache so next message fetches fresh data from DB
+    with _user_cache_lock:
+        _user_cache.pop(chat_id, None)
 
     assignments = ", ".join(f"{key} = %s" for key in sanitized_fields)
     values = list(sanitized_fields.values()) + [chat_id]
