@@ -66,9 +66,13 @@ ONBOARDING_STEP_ORDER = {
     ONBOARDING_STEP_CROP: 4,
 }
 PROFILE_MIGRATIONS = {
+    "username": (
+        "ALTER TABLE users ADD COLUMN username VARCHAR(255) NULL "
+        "AFTER first_name"
+    ),
     "full_name": (
         "ALTER TABLE users ADD COLUMN full_name VARCHAR(255) NULL "
-        "AFTER first_name"
+        "AFTER username"
     ),
     "province": (
         "ALTER TABLE users ADD COLUMN province VARCHAR(100) NULL "
@@ -377,6 +381,7 @@ def register_or_update_user(message: dict) -> dict:
         "is_admin": is_admin,
         "joined_date": None,
         "first_name": user.get("first_name") or "Farmer",
+        "username": user.get("username") or "",
         "full_name": "",
         "gender": DEFAULT_GENDER,
         "province": "",
@@ -407,11 +412,14 @@ def register_or_update_user(message: dict) -> dict:
         connection = _get_db_connection()
         cursor = connection.cursor(dictionary=True)
         latest_first_name = user.get("first_name") or "Farmer"
+        latest_username = user.get("username") or ""
         cursor.execute(
             """
             SELECT
                 id,
+                chat_id,
                 first_name,
+                username,
                 full_name,
                 gender,
                 province,
@@ -431,6 +439,7 @@ def register_or_update_user(message: dict) -> dict:
         if existing_user:
             state["joined_date"] = existing_user["joined_date"]
             state["first_name"] = existing_user["first_name"] or latest_first_name
+            state["username"] = (existing_user.get("username") or "").strip()
             state["full_name"] = (existing_user.get("full_name") or "").strip()
             state["gender"] = existing_user["gender"] or DEFAULT_GENDER
             state["province"] = (existing_user.get("province") or "").strip()
@@ -443,12 +452,18 @@ def register_or_update_user(message: dict) -> dict:
             state["onboarding_step"] = (
                 existing_user.get("onboarding_step") or ""
             ).strip()
-            if latest_first_name != (existing_user["first_name"] or ""):
+            
+            db_first_name = existing_user.get("first_name") or ""
+            db_username = existing_user.get("username") or ""
+            if latest_first_name != db_first_name or latest_username != db_username:
                 cursor.execute(
-                    "UPDATE users SET first_name = %s WHERE chat_id = %s",
-                    (latest_first_name, chat_id),
+                    "UPDATE users SET first_name = %s, username = %s WHERE chat_id = %s",
+                    (latest_first_name, latest_username or None, chat_id),
                 )
                 connection.commit()
+                # Update state values after DB update
+                state["first_name"] = latest_first_name
+                state["username"] = latest_username
 
         if existing_user is None:
             cursor.execute(
@@ -456,20 +471,23 @@ def register_or_update_user(message: dict) -> dict:
                 INSERT INTO users (
                     chat_id,
                     first_name,
+                    username,
                     gender,
                     joined_date
                 )
-                VALUES (%s, %s, %s, UTC_TIMESTAMP())
+                VALUES (%s, %s, %s, %s, UTC_TIMESTAMP())
                 """,
                 (
                     chat_id,
                     latest_first_name,
+                    latest_username or None,
                     DEFAULT_GENDER,
                 ),
             )
             connection.commit()
             state["joined_date"] = None
             state["first_name"] = latest_first_name
+            state["username"] = latest_username
             state["onboarding_step"] = ONBOARDING_STEP_FULL_NAME
 
         result = _normalize_onboarding_state(state)
@@ -595,6 +613,7 @@ def get_recent_users(limit: int = 10):
                 id,
                 chat_id,
                 first_name,
+                username,
                 full_name,
                 gender,
                 province,
@@ -1369,44 +1388,50 @@ def send_recent_users(chat_id: int) -> None:
     if not recent_users:
         send_bot_message(
             chat_id,
-            "\U0001f4ed <b>\u1798\u17b7\u1793\u1791\u17b6\u1793\u17cb\u1798\u17b6\u1793"
-            "\u1794\u1789\u17d2\u1787\u17b8\u17a2\u17d2\u1793\u1780\u1794\u17d2\u179a\u17be\u1790\u17d2\u1798\u17b8\u17d7</b>\n"
-            "\u1798\u17bc\u179b\u178a\u17d2\u178b\u17b6\u1793\u1791\u17b7\u1793\u17d2\u1793\u1793\u17d0\u1799"
-            "\u17a2\u17b6\u1785\u1793\u17c5\u1791\u1791\u17c1 \u17ac \u1798\u17b7\u1793\u1791\u17b6\u1793\u17cb"
-            "\u179a\u17bd\u1785\u179a\u17b6\u179b\u17cb\u1793\u17c5\u17a1\u17be\u1799\u1791\u17c1\u17d4",
+            "📬 <b>មិនទាន់មានគណនីអ្នកប្រើប្រាស់ថ្មីៗនៅឡើយទេ។</b>",
         )
         return
 
     lines = [
-        "\U0001f4cb <b>\u17a2\u17d2\u1793\u1780\u1794\u17d2\u179a\u17be\u1790\u17d2\u1798\u17b8\u17d7</b>",
-        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501",
+        "📋 <b>បញ្ជីអ្នកប្រើប្រាស់ថ្មីៗ (Recent Users)</b>",
+        "<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>\n",
     ]
     for index, user in enumerate(recent_users, start=1):
         display_name = user.get("full_name") or user.get("first_name")
-        name = escape(display_name or "\u1798\u17b7\u1793\u1791\u17b6\u1793\u17cb\u1798\u17b6\u1793\u1788\u17d2\u1798\u17c4\u17c7")
+        name = escape(display_name or "មិនទាន់មានឈ្មោះ")
         is_admin_user = user["chat_id"] in ADMIN_USER_IDS
-        admin_badge = " <b>[អ្នកគ្រប់គ្រង]</b>" if is_admin_user else ""
-        gender_value = user["gender"] or DEFAULT_GENDER
-        gender = _format_gender(gender_value)
-        user_icon = _user_icon(is_admin_user, gender_value)
+        admin_badge = " 🛡️ <b>[ADMIN]</b>" if is_admin_user else " 🌾 <b>[សមាជិក]</b>"
+        
+        gender_value = user.get("gender") or DEFAULT_GENDER
+        user_icon = "👤"
+        if gender_value == GENDER_MALE:
+            user_icon = "👨"
+        elif gender_value == GENDER_FEMALE:
+            user_icon = "👩"
+
         province = escape((user.get("province") or "មិនទាន់កំណត់").strip() or "មិនទាន់កំណត់")
         crop_interest = escape(_crop_label(user.get("crop_interest") or ""))
         joined_date = _format_datetime(user["joined_date"])
         completion_badge = (
             ""
             if user.get("onboarding_completed")
-            else " <i>(កំពុងបំពេញប្រវត្តិរូប)</i>"
+            else " ⚠️ <i>(កំពុងបំពេញប្រវត្តិរូប)</i>"
         )
+        
+        username_val = user.get("username")
+        username_text = f"@{escape(username_val)}" if username_val else "<i>គ្មាន</i>"
+        
         lines.append(
             f"{user_icon} <b>#{index} {name}</b>{admin_badge}{completion_badge}\n"
-            f"   \u2022 \u1797\u17c1\u1791: {gender}\n"
-            f"   \u2022 \u178f\u17c6\u1794\u1793\u17cb: {province}\n"
-            f"   \u2022 \u178a\u17c6\u178e\u17b6\u17c6: {crop_interest}\n"
-            f"   \u2022 \u1785\u17bc\u179b\u1794\u17d2\u179a\u17be: <code>{joined_date}</code>"
+            f"• 🆔 <b>ID:</b> <code>{user['chat_id']}</code>\n"
+            f"• 🏷️ <b>គណនី:</b> {username_text}\n"
+            f"• 📍 <b>ខេត្ត/ក្រុង:</b> {province}\n"
+            f"• 🌾 <b>ដំណាំ:</b> {crop_interest}\n"
+            f"• 📅 <b>ចូលរួម:</b> <code>{joined_date}</code>\n"
         )
-        if index != len(recent_users):
-            lines.append("")
 
+    lines.append("<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>")
+    lines.append("💡 <i>បង្ហាញគណនីថ្មីៗបំផុតចំនួន ១០ នាក់</i>")
     send_bot_message(chat_id, "\n".join(lines))
 
 
@@ -1416,6 +1441,16 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
     if normalized_text.startswith("/"):
         command = normalized_text.split()[0].split("@")[0].lower()
     user_name = _display_name(user.get("first_name", ""), user.get("username", ""))
+    
+    if not user_state.get("db_enabled"):
+        if not command:
+            send_bot_message(
+                chat_id,
+                "⚠️ <b>មូលដ្ឋានទិន្នន័យមិនទាន់រួចរាល់៖</b>\n"
+                "ម៉ាស៊ីនបម្រើទិន្នន័យអាចកំពុងចាប់ផ្តើមឡើងវិញ (Rebuilding)។ សូមរង់ចាំ ១-២ នាទី រួចសាកល្បងម្តងទៀត។"
+            )
+            return
+
     _normalize_onboarding_state(user_state)
     onboarding_step = _next_onboarding_step(user_state)
 
