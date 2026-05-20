@@ -1,6 +1,8 @@
 import hashlib
 import logging
 import os
+import threading
+import urllib.request
 from html import escape
 from threading import Lock
 
@@ -11,9 +13,11 @@ from flask import Flask, abort, jsonify, request
 try:
     import mysql.connector
     from mysql.connector import Error as MySQLError
+    from mysql.connector.pooling import MySQLConnectionPool
 except ImportError:
     mysql = None
     MySQLError = Exception
+    MySQLConnectionPool = None
 
 load_dotenv()
 
@@ -191,6 +195,10 @@ _database_lock = Lock()
 _database_ready = False
 _database_skip_logged = False
 
+# Connection pool — reuse DB connections instead of open/close every message
+_db_pool = None
+_db_pool_lock = Lock()
+
 
 def _public_base_url() -> str:
     explicit_url = os.getenv("WEBHOOK_URL")
@@ -217,7 +225,41 @@ def _mysql_is_configured() -> bool:
     return all([MYSQL_HOST.strip(), MYSQL_DATABASE.strip(), MYSQL_USER.strip()])
 
 
+def _get_db_pool():
+    """Return the shared connection pool, creating it once if needed."""
+    global _db_pool
+    if _db_pool is not None:
+        return _db_pool
+    with _db_pool_lock:
+        if _db_pool is not None:
+            return _db_pool
+        if mysql is None or MySQLConnectionPool is None:
+            return None
+        try:
+            _db_pool = MySQLConnectionPool(
+                pool_name="farmers_pool",
+                pool_size=5,          # keep 5 connections open & ready
+                pool_reset_session=True,
+                host=MYSQL_HOST,
+                port=MYSQL_PORT,
+                database=MYSQL_DATABASE,
+                user=MYSQL_USER,
+                password=MYSQL_PASSWORD,
+            )
+            logger.info("MySQL connection pool created (size=5).")
+        except MySQLError:
+            logger.exception("Failed to create MySQL connection pool.")
+        return _db_pool
+
+
 def _get_db_connection():
+    """Get a connection from the pool (fast) or open a direct one as fallback."""
+    pool = _get_db_pool()
+    if pool is not None:
+        try:
+            return pool.get_connection()
+        except MySQLError:
+            logger.warning("Pool exhausted, falling back to direct connection.")
     return mysql.connector.connect(
         host=MYSQL_HOST,
         port=MYSQL_PORT,
@@ -592,6 +634,31 @@ if AUTO_SET_WEBHOOK:
     configure_webhook()
 
 ensure_database_ready()
+
+# Pre-warm the DB connection pool so the first user request is fast
+if _mysql_is_configured() and mysql is not None:
+    _get_db_pool()
+
+
+def _self_ping_worker() -> None:
+    """Ping /healthz every 10 minutes to prevent Render from sleeping."""
+    threading.Event().wait(60)  # wait 1 min after startup before first ping
+    while True:
+        try:
+            public_url = _public_base_url()
+            if public_url:
+                req = urllib.request.urlopen(
+                    f"{public_url}/healthz", timeout=10
+                )
+                req.close()
+                logger.info("Self-ping OK")
+        except Exception as exc:
+            logger.warning("Self-ping failed: %s", exc)
+        threading.Event().wait(600)  # ping every 10 minutes
+
+
+# Start self-ping as a background daemon thread
+threading.Thread(target=_self_ping_worker, daemon=True, name="self-ping").start()
 
 
 def _validate_telegram_request() -> None:
