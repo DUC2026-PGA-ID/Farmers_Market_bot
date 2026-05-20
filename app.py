@@ -1301,51 +1301,38 @@ def handle_onboarding_callback(callback_query: dict) -> bool:
 def send_welcome(chat_id: int, user_name: str, user_state: dict) -> None:
     safe_user_name = escape(_profile_display_name(user_state, user_name))
     if not user_state.get("db_enabled"):
-        intro = (
-            f"\U0001f44b \u179f\u17bd\u179f\u17d2\u178f\u17b8 {safe_user_name}! "
-            "\u179f\u17d2\u179c\u17b6\u1782\u1798\u1793\u17cd\u1798\u1780\u1780\u17b6\u1793\u17cb "
-            "Agri-Trade Bot!\n\n"
-        )
+        intro = f"👋 <b>សួស្តី {safe_user_name}!</b>\n"
     elif user_state.get("is_new_user"):
-        intro = (
-            f"\U0001f44b \u179f\u17bd\u179f\u17d2\u178f\u17b8 {safe_user_name}! "
-            "\u17a2\u17d2\u1793\u1780\u1782\u17ba\u1787\u17b6\u17a2\u17d2\u1793\u1780"
-            "\u1794\u17d2\u179a\u17be\u1790\u17d2\u1798\u17b8 \u179f\u17d2\u179c\u17b6"
-            "\u1782\u1798\u1793\u17cd\u1798\u1780\u1780\u17b6\u1793\u17cb Agri-Trade Bot!\n\n"
-        )
+        intro = f"👋 <b>សួស្តីសមាជិកថ្មី {safe_user_name}!</b>\n"
     else:
-        intro = (
-            f"\U0001f44b \u179f\u17bd\u179f\u17d2\u178f\u17b8 {safe_user_name}! "
-            "\u179f\u17c2\u179c\u1782\u1798\u1793\u17cd\u1798\u1780\u179c\u17b7\u1789 "
-            "Agri-Trade Bot!\n\n"
-        )
+        intro = f"👋 <b>រីករាយដែលបានជួបគ្នាជាថ្មី {safe_user_name}!</b>\n"
 
     admin_note = ""
     if user_state.get("is_admin"):
         admin_note = (
-            "\U0001f6e1\ufe0f <b>របៀបអ្នកគ្រប់គ្រងកំពុងដំណើរការ</b>\n"
-            "\u2022 <code>/users</code>\n"
-            "\u2022 <code>/recentusers</code>\n\n"
+            "🛡️ <b>របៀបអ្នកគ្រប់គ្រង (Admin Mode):</b>\n"
+            "• <code>/users</code> - ស្ថិតិអ្នកប្រើប្រាស់\n"
+            "• <code>/recentusers</code> - អ្នកប្រើប្រាស់ថ្មីៗ\n"
+            "<code>──────────────────</code>\n"
         )
 
     welcome_text = (
         f"{intro}"
-        "\U0001f33f <b>Agri-Trade Bot</b>\n"
-        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-        "\u1794\u17d2\u179a\u1796\u17d0\u1793\u17d2\u1792\u1796\u17d0\u178f\u17cc\u1798\u17b6\u1793"
-        "\u1791\u17b8\u1795\u17d2\u179f\u17b6\u179a\u1780\u179f\u17b7\u1780\u179a "
-        "\u1795\u17d2\u179b\u17bc\u179c\u1780\u17b6\u179a\u179a\u1794\u179f\u17cb Immortal Digital!\n\n"
-        "\U0001f680 <b>ពាក្យបញ្ជារហ័ស</b>\n"
-        "\u2022 <code>/rice</code>  \u1798\u17be\u179b\u178f\u1798\u17d2\u179b\u17c3\u179f\u17d2\u179a\u17bc\u179c\n"
-        "\u2022 <code>/pepper</code>  \u1798\u17be\u179b\u178f\u1798\u17d2\u179b\u17c3\u1798\u17d2\u1791\u17c1\u179f\n"
-        "\u2022 <code>/market</code>  \u1798\u17be\u179b\u179f\u17d2\u1790\u17b6\u1793\u1797\u17b6\u1796\u1791\u17b8\u1795\u17d2\u179f\u17b6\u179a\n"
-        "\u2022 <code>/contact</code>  \u1780\u17b6\u179a\u1791\u17c6\u1793\u17b6\u1780\u17cb\u1791\u17c6\u1793\u1784\n"
-        "\u2022 <code>/profile</code>  \u1798\u17be\u179b\u1794\u17d2\u179a\u179c\u178f\u17d2\u178f\u17b7\u179a\u17bc\u1794\n"
-        "\u2022 <code>/editprofile</code>  \u1780\u17c2\u1794\u17d2\u179a\u179c\u178f\u17d2\u178f\u17b7\u179a\u17bc\u1794\n"
-        "\u2022 <code>/help</code>  \u1798\u17be\u179b\u1794\u1789\u17d2\u1787\u17b8\u1796\u17b6\u1780\u17d2\u1799\u1794\u1789\u17d2\u1787\u17b6\u1791\u17b6\u17c6\u1784\u17a2\u179f\u17cb\n\n"
+        "🌱 <b>ស្វាគមន៍មកកាន់ Agri-Trade Bot</b>\n"
+        "<code>━━━━━━━━━━━━━━━━━━</code>\n"
+        "ប្រព័ន្ធផ្តល់ព័ត៌មាន និងតម្លៃកសិផលផ្លូវការ\n"
+        "អភិវឌ្ឍន៍ដោយ៖ <b>Immortal Digital</b>\n"
+        "<code>━━━━━━━━━━━━━━━━━━</code>\n"
         f"{admin_note}"
-        "\U0001f447 \u179f\u17bc\u1798\u1787\u17d2\u179a\u17be\u179f\u1794\u17ca\u17bc\u178f\u17bb\u1784"
-        "\u1781\u17b6\u1784\u1780\u17d2\u179a\u17c4\u1798 \u17ac\u1794\u17d2\u179a\u17be slash command \u1781\u17b6\u1784\u179b\u17be\u17d4"
+        "🚀 <b>បញ្ជីពាក្យបញ្ជាគន្លឹះ៖</b>\n"
+        "🌾 <code>/rice</code> - តម្លៃស្រូវ\n"
+        "🌶️ <code>/pepper</code> - តម្លៃម្ទេស\n"
+        "📈 <code>/market</code> - ស្ថានភាពទីផ្សារ\n"
+        "🪪 <code>/profile</code> - ប្រវត្តិរូបរបស់អ្នក\n"
+        "📞 <code>/contact</code> - ព័ត៌មានសេវាកម្ម\n"
+        "❓ <code>/help</code> - ជំនួយបន្ថែម\n"
+        "<code>━━━━━━━━━━━━━━━━━━</code>\n"
+        "👇 <i>សូមប្រើប្រាស់ប៊ូតុងម៉ឺនុយខាងក្រោមដើម្បីចាប់ផ្តើម៖</i>"
     )
     send_bot_message(chat_id, welcome_text, reply_markup=build_main_keyboard())
 
