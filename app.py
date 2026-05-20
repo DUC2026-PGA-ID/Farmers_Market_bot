@@ -8,7 +8,7 @@ from threading import Lock
 
 import telebot
 from dotenv import load_dotenv
-from flask import Flask, abort, jsonify, request
+from flask import Flask, abort, jsonify, render_template, request
 
 try:
     import mysql.connector
@@ -31,6 +31,9 @@ if not BOT_TOKEN:
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 WEBHOOK_PATH = "/" + os.getenv("WEBHOOK_PATH", "/telegram/webhook").strip("/")
 AUTO_SET_WEBHOOK = os.getenv("AUTO_SET_WEBHOOK", "true").lower() == "true"
+# Secret token to access the admin dashboard at /dashboard?token=...
+# Leave empty to disable the dashboard entirely.
+DASHBOARD_TOKEN = os.getenv("DASHBOARD_TOKEN", "")
 MYSQL_HOST = os.getenv("MYSQL_HOST", "")
 MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
 MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "")
@@ -1599,6 +1602,38 @@ def setup_webhook():
 @app.get("/healthz")
 def healthz():
     return jsonify({"ok": True}), 200
+
+
+@app.get("/dashboard")
+def dashboard():
+    # Disabled if no token is configured
+    if not DASHBOARD_TOKEN:
+        abort(404)
+
+    # Constant-time comparison to prevent timing attacks
+    provided = request.args.get("token", "")
+    expected = hashlib.sha256(DASHBOARD_TOKEN.encode()).hexdigest()
+    provided_hash = hashlib.sha256(provided.encode()).hexdigest()
+    if not (provided and provided_hash == expected):
+        abort(403)
+
+    try:
+        bot_info = bot.get_me()
+        bot_username = bot_info.username or ""
+    except Exception:
+        bot_username = ""
+
+    stats = get_user_stats()
+    recent_users = get_recent_users(limit=20)
+
+    return render_template(
+        "dashboard.html",
+        stats=stats,
+        recent_users=recent_users,
+        admin_ids=ADMIN_USER_IDS,
+        bot_username=bot_username,
+        token=provided,
+    )
 
 
 if __name__ == "__main__":
