@@ -43,22 +43,18 @@ DEFAULT_GENDER = "unknown"
 GENDER_MALE = "male"
 GENDER_FEMALE = "female"
 GENDER_OTHER = "other"
-GENDER_LABEL_TO_VALUE = {
-    "👨 ប្រុស": GENDER_MALE,
-    "👩 ស្រី": GENDER_FEMALE,
-    "🧑 ផ្សេងៗ": GENDER_OTHER,
-}
-CROP_LABEL_TO_VALUE = {
-    "🌾 ស្រូវ": "ស្រូវ",
-    "🌶️ ម្ទេស": "ម្ទេស",
-    "🌾🌶️ ស្រូវ និង ម្ទេស": "ស្រូវ និង ម្ទេស",
-    "📦 ផ្សេងៗ": "ផ្សេងៗ",
-}
+GENDER_SKIPPED = "skipped"
+CROP_SKIPPED = "មិនបញ្ជាក់"
+ONBOARDING_STEP_FULL_NAME = "full_name"
+ONBOARDING_STEP_PROVINCE = "province"
+ONBOARDING_STEP_GENDER = "gender_optional"
+ONBOARDING_STEP_CROP = "crop_optional"
+ONBOARDING_STEP_COMPLETED = "completed"
 ONBOARDING_STEP_ORDER = {
-    "full_name": 1,
-    "gender": 2,
-    "province": 3,
-    "crop_interest": 4,
+    ONBOARDING_STEP_FULL_NAME: 1,
+    ONBOARDING_STEP_PROVINCE: 2,
+    ONBOARDING_STEP_GENDER: 3,
+    ONBOARDING_STEP_CROP: 4,
 }
 PROFILE_MIGRATIONS = {
     "full_name": (
@@ -76,6 +72,10 @@ PROFILE_MIGRATIONS = {
     "onboarding_completed": (
         "ALTER TABLE users ADD COLUMN onboarding_completed "
         "TINYINT(1) NOT NULL DEFAULT 0 AFTER crop_interest"
+    ),
+    "onboarding_step": (
+        "ALTER TABLE users ADD COLUMN onboarding_step VARCHAR(32) NULL "
+        "AFTER onboarding_completed"
     ),
 }
 # Telegram secret tokens only allow a narrow character set, so we derive
@@ -313,6 +313,7 @@ def register_or_update_user(message: dict) -> dict:
         "province": "",
         "crop_interest": "",
         "onboarding_completed": False,
+        "onboarding_step": ONBOARDING_STEP_FULL_NAME,
     }
 
     if not user_id or not chat_id or not ensure_database_ready():
@@ -334,6 +335,7 @@ def register_or_update_user(message: dict) -> dict:
                 province,
                 crop_interest,
                 onboarding_completed,
+                onboarding_step,
                 joined_date
             FROM users
             WHERE chat_id = %s
@@ -356,6 +358,9 @@ def register_or_update_user(message: dict) -> dict:
             state["onboarding_completed"] = bool(
                 existing_user.get("onboarding_completed")
             )
+            state["onboarding_step"] = (
+                existing_user.get("onboarding_step") or ""
+            ).strip()
             if latest_first_name != (existing_user["first_name"] or ""):
                 cursor.execute(
                     "UPDATE users SET first_name = %s WHERE chat_id = %s",
@@ -383,8 +388,9 @@ def register_or_update_user(message: dict) -> dict:
             connection.commit()
             state["joined_date"] = None
             state["first_name"] = latest_first_name
+            state["onboarding_step"] = ONBOARDING_STEP_FULL_NAME
 
-        return state
+        return _normalize_onboarding_state(state)
     except MySQLError:
         logger.exception("Unable to save Telegram user to MySQL.")
         return state
@@ -405,6 +411,7 @@ def update_user_profile(chat_id: int, **fields) -> bool:
         "province",
         "crop_interest",
         "onboarding_completed",
+        "onboarding_step",
     }
     sanitized_fields = {
         key: value for key, value in fields.items() if key in allowed_fields
@@ -444,6 +451,7 @@ def reset_user_profile(chat_id: int) -> bool:
         province=None,
         crop_interest=None,
         onboarding_completed=0,
+        onboarding_step=ONBOARDING_STEP_FULL_NAME,
     )
 
 
@@ -611,24 +619,56 @@ def build_main_keyboard():
 
 
 def build_gender_keyboard():
-    markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    markup = telebot.types.InlineKeyboardMarkup(row_width=2)
     markup.add(
-        telebot.types.KeyboardButton("👨 ប្រុស"),
-        telebot.types.KeyboardButton("👩 ស្រី"),
+        telebot.types.InlineKeyboardButton(
+            "👨 ប្រុស", callback_data="onboard:gender:male"
+        ),
+        telebot.types.InlineKeyboardButton(
+            "👩 ស្រី", callback_data="onboard:gender:female"
+        ),
     )
-    markup.add(telebot.types.KeyboardButton("🧑 ផ្សេងៗ"))
+    markup.add(
+        telebot.types.InlineKeyboardButton(
+            "🧑 ផ្សេងៗ", callback_data="onboard:gender:other"
+        )
+    )
+    markup.add(
+        telebot.types.InlineKeyboardButton(
+            "⏭️ រំលង", callback_data="onboard:gender:skip"
+        ),
+        telebot.types.InlineKeyboardButton(
+            "◀️ កែខេត្ត", callback_data="onboard:gender:back_province"
+        ),
+    )
     return markup
 
 
 def build_crop_keyboard():
-    markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    markup = telebot.types.InlineKeyboardMarkup(row_width=2)
     markup.add(
-        telebot.types.KeyboardButton("🌾 ស្រូវ"),
-        telebot.types.KeyboardButton("🌶️ ម្ទេស"),
+        telebot.types.InlineKeyboardButton(
+            "🌾 ស្រូវ", callback_data="onboard:crop:rice"
+        ),
+        telebot.types.InlineKeyboardButton(
+            "🌶️ ម្ទេស", callback_data="onboard:crop:pepper"
+        ),
     )
     markup.add(
-        telebot.types.KeyboardButton("🌾🌶️ ស្រូវ និង ម្ទេស"),
-        telebot.types.KeyboardButton("📦 ផ្សេងៗ"),
+        telebot.types.InlineKeyboardButton(
+            "🌾🌶️ ស្រូវ និង ម្ទេស", callback_data="onboard:crop:rice_pepper"
+        ),
+        telebot.types.InlineKeyboardButton(
+            "📦 ផ្សេងៗ", callback_data="onboard:crop:other"
+        ),
+    )
+    markup.add(
+        telebot.types.InlineKeyboardButton(
+            "⏭️ រំលង", callback_data="onboard:crop:skip"
+        ),
+        telebot.types.InlineKeyboardButton(
+            "◀️ ត្រឡប់ទៅភេទ", callback_data="onboard:crop:back_gender"
+        ),
     )
     return markup
 
@@ -637,6 +677,17 @@ def send_bot_message(chat_id: int, text: str, reply_markup=None) -> None:
     bot.send_message(
         chat_id,
         text,
+        reply_markup=reply_markup,
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
+
+
+def edit_bot_message(chat_id: int, message_id: int, text: str, reply_markup=None) -> None:
+    bot.edit_message_text(
+        text,
+        chat_id=chat_id,
+        message_id=message_id,
         reply_markup=reply_markup,
         parse_mode="HTML",
         disable_web_page_preview=True,
@@ -663,19 +714,49 @@ def _profile_display_name(user_state: dict, fallback_name: str) -> str:
     return fallback_name
 
 
+def _crop_label(value: str) -> str:
+    normalized = (value or "").strip()
+    if not normalized:
+        return "មិនទាន់កំណត់"
+    return normalized
+
+
+def _normalize_onboarding_state(user_state: dict) -> dict:
+    step = (user_state.get("onboarding_step") or "").strip()
+
+    if not (user_state.get("full_name") or "").strip():
+        step = ONBOARDING_STEP_FULL_NAME
+    elif not (user_state.get("province") or "").strip():
+        step = ONBOARDING_STEP_PROVINCE
+    elif step not in {
+        ONBOARDING_STEP_GENDER,
+        ONBOARDING_STEP_CROP,
+        ONBOARDING_STEP_COMPLETED,
+    }:
+        step = (
+            ONBOARDING_STEP_COMPLETED
+            if user_state.get("onboarding_completed")
+            else ONBOARDING_STEP_GENDER
+        )
+
+    if step == ONBOARDING_STEP_COMPLETED:
+        user_state["onboarding_completed"] = True
+    else:
+        user_state["onboarding_completed"] = False
+
+    user_state["onboarding_step"] = step
+    return user_state
+
+
 def _next_onboarding_step(user_state: dict) -> str | None:
     if not user_state.get("db_enabled"):
         return None
 
-    if not (user_state.get("full_name") or "").strip():
-        return "full_name"
-    if (user_state.get("gender") or DEFAULT_GENDER).strip().lower() == DEFAULT_GENDER:
-        return "gender"
-    if not (user_state.get("province") or "").strip():
-        return "province"
-    if not (user_state.get("crop_interest") or "").strip():
-        return "crop_interest"
-    return None
+    _normalize_onboarding_state(user_state)
+    step = user_state.get("onboarding_step") or ONBOARDING_STEP_FULL_NAME
+    if step == ONBOARDING_STEP_COMPLETED:
+        return None
+    return step
 
 
 def _profile_completion_count(user_state: dict) -> int:
@@ -695,13 +776,23 @@ def _sync_onboarding_status(chat_id: int, user_state: dict) -> bool:
     if not user_state.get("db_enabled"):
         return False
 
-    is_complete = _next_onboarding_step(user_state) is None
-    desired_value = bool(is_complete)
-    if bool(user_state.get("onboarding_completed")) == desired_value:
+    _normalize_onboarding_state(user_state)
+    desired_step = user_state.get("onboarding_step") or ONBOARDING_STEP_FULL_NAME
+    desired_value = desired_step == ONBOARDING_STEP_COMPLETED
+
+    if (
+        bool(user_state.get("onboarding_completed")) == desired_value
+        and (user_state.get("onboarding_step") or "") == desired_step
+    ):
         return desired_value
 
-    if update_user_profile(chat_id, onboarding_completed=int(desired_value)):
+    if update_user_profile(
+        chat_id,
+        onboarding_completed=int(desired_value),
+        onboarding_step=desired_step,
+    ):
         user_state["onboarding_completed"] = desired_value
+        user_state["onboarding_step"] = desired_step
         return desired_value
     return bool(user_state.get("onboarding_completed"))
 
@@ -722,6 +813,8 @@ def _format_gender(value: str) -> str:
         return "ស្រី"
     if normalized in {"other"}:
         return "ផ្សេងៗ"
+    if normalized in {GENDER_SKIPPED}:
+        return "មិនបញ្ជាក់"
     return "មិនទាន់កំណត់"
 
 
@@ -765,10 +858,7 @@ def build_profile_text(user_state: dict, fallback_name: str) -> str:
     display_name = escape(_profile_display_name(user_state, fallback_name))
     gender_label = _format_gender(user_state.get("gender") or DEFAULT_GENDER)
     province = escape((user_state.get("province") or "មិនទាន់កំណត់").strip() or "មិនទាន់កំណត់")
-    crop_interest = escape(
-        (user_state.get("crop_interest") or "មិនទាន់កំណត់").strip()
-        or "មិនទាន់កំណត់"
-    )
+    crop_interest = escape(_crop_label(user_state.get("crop_interest") or ""))
     joined_date = _format_datetime(user_state.get("joined_date"))
     completion_status = (
         "រួចរាល់" if user_state.get("onboarding_completed") else "មិនទាន់រួច"
@@ -801,23 +891,49 @@ def send_profile_card(chat_id: int, user_state: dict, fallback_name: str) -> Non
 def send_onboarding_intro(chat_id: int, user_state: dict, fallback_name: str) -> None:
     completed = _profile_completion_count(user_state)
     display_name = escape(_profile_display_name(user_state, fallback_name))
+    step = _next_onboarding_step(user_state)
+    mode_note = (
+        "បំពេញតែ 2 ព័ត៌មានសំខាន់ជាមុន ហើយព័ត៌មានបន្ថែមអាចរំលងបាន។"
+        if step in {ONBOARDING_STEP_FULL_NAME, ONBOARDING_STEP_PROVINCE}
+        else "អ្នកអាចបំពេញព័ត៌មានបន្ថែម ឬរំលងសិនក៏បាន។"
+    )
     send_bot_message(
         chat_id,
         (
             f"🧾 <b>សួស្តី {display_name}!</b>\n"
-            "មុនពេលប្រើ Agri-Trade Bot ពេញលេញ សូមបំពេញព័ត៌មានខ្លីៗ 4 ជំហានសិន។\n\n"
+            "មុនពេលប្រើ Agri-Trade Bot សូមបំពេញប្រវត្តិរូបតូចមួយសិន។\n\n"
             f"📍 វឌ្ឍនភាពបច្ចុប្បន្ន: <b>{completed}/4</b>\n"
-            "បន្ទាប់ពីបំពេញរួច អ្នកអាចមើលតម្លៃទីផ្សារ និងគ្រប់គ្រងប្រវត្តិរូបបានកាន់តែងាយ។"
+            "✅ តម្រូវឱ្យបំពេញ: ឈ្មោះ និង ខេត្ត/តំបន់\n"
+            "✨ ស្រេចចិត្ត: ភេទ និង ដំណាំចាប់អារម្មណ៍\n\n"
+            f"💡 {mode_note}"
         ),
         reply_markup=telebot.types.ReplyKeyboardRemove(),
     )
+
+
+def send_soft_profile_reminder(chat_id: int, user_state: dict) -> None:
+    step = _next_onboarding_step(user_state)
+    if not step:
+        return
+
+    if step in {ONBOARDING_STEP_FULL_NAME, ONBOARDING_STEP_PROVINCE}:
+        reminder = (
+            "📝 <b>សូមបន្តបំពេញប្រវត្តិរូប</b>\n"
+            "អ្នកអាចប្រើ bot បាន ប៉ុន្តែគួរបំពេញឈ្មោះ និង ខេត្តជាមុនសិន។"
+        )
+    else:
+        reminder = (
+            "✨ <b>ព័ត៌មានបន្ថែមនៅមិនទាន់រួច</b>\n"
+            "អ្នកអាចជ្រើសបំពេញភេទ និងដំណាំចាប់អារម្មណ៍ ឬរំលងសិនក៏បាន។"
+        )
+    send_bot_message(chat_id, reminder)
 
 
 def send_onboarding_prompt(chat_id: int, step: str) -> None:
     step_number = ONBOARDING_STEP_ORDER.get(step, 1)
     header = f"🪪 <b>ជំហាន {step_number}/4</b>\n"
 
-    if step == "full_name":
+    if step == ONBOARDING_STEP_FULL_NAME:
         send_bot_message(
             chat_id,
             header
@@ -827,15 +943,7 @@ def send_onboarding_prompt(chat_id: int, step: str) -> None:
         )
         return
 
-    if step == "gender":
-        send_bot_message(
-            chat_id,
-            header + "សូមជ្រើស <b>ភេទ</b> របស់អ្នកពីប៊ូតុងខាងក្រោម។",
-            reply_markup=build_gender_keyboard(),
-        )
-        return
-
-    if step == "province":
+    if step == ONBOARDING_STEP_PROVINCE:
         send_bot_message(
             chat_id,
             header
@@ -845,10 +953,22 @@ def send_onboarding_prompt(chat_id: int, step: str) -> None:
         )
         return
 
-    if step == "crop_interest":
+    if step == ONBOARDING_STEP_GENDER:
         send_bot_message(
             chat_id,
-            header + "សូមជ្រើស <b>ដំណាំដែលអ្នកចាប់អារម្មណ៍</b>។",
+            header
+            + "សូមជ្រើស <b>ភេទ</b> របស់អ្នក។\n"
+            + "<i>ជាជម្រើសស្រេចចិត្ត អ្នកអាចរំលងបាន។</i>",
+            reply_markup=build_gender_keyboard(),
+        )
+        return
+
+    if step == ONBOARDING_STEP_CROP:
+        send_bot_message(
+            chat_id,
+            header
+            + "សូមជ្រើស <b>ដំណាំដែលអ្នកចាប់អារម្មណ៍</b>។\n"
+            + "<i>ជាជម្រើសស្រេចចិត្ត អ្នកអាចរំលងបាន។</i>",
             reply_markup=build_crop_keyboard(),
         )
 
@@ -863,14 +983,15 @@ def process_onboarding_input(
     if not step:
         return False
 
+    if step not in {ONBOARDING_STEP_FULL_NAME, ONBOARDING_STEP_PROVINCE}:
+        return False
+
     value = (text or "").strip()
     if not value:
         send_onboarding_prompt(chat_id, step)
         return True
 
-    if step in {"full_name", "province"} and (
-        value.startswith("/") or value in BUTTON_RESPONSES
-    ):
+    if value.startswith("/") or value in BUTTON_RESPONSES:
         send_bot_message(
             chat_id,
             "⚠️ សូមបញ្ចូលជាអក្សរធម្មតា មិនមែនជាពាក្យបញ្ជា ឬប៊ូតុងម៉ឺនុយទេ។",
@@ -878,54 +999,187 @@ def process_onboarding_input(
         send_onboarding_prompt(chat_id, step)
         return True
 
-    if step == "full_name":
+    if step == ONBOARDING_STEP_FULL_NAME:
         clean_name = value[:255]
-        if not update_user_profile(chat_id, full_name=clean_name):
+        if not update_user_profile(
+            chat_id,
+            full_name=clean_name,
+            onboarding_step=ONBOARDING_STEP_PROVINCE,
+            onboarding_completed=0,
+        ):
             send_bot_message(chat_id, "⚠️ មិនអាចរក្សាទុកឈ្មោះបានទេ។ សូមសាកម្តងទៀត។")
             return True
         user_state["full_name"] = clean_name
-    elif step == "gender":
-        selected_gender = GENDER_LABEL_TO_VALUE.get(value)
-        if not selected_gender:
-            send_bot_message(chat_id, "⚠️ សូមជ្រើសភេទពីប៊ូតុងដែលបានផ្តល់ឲ្យ។")
-            send_onboarding_prompt(chat_id, step)
-            return True
-        if not update_user_profile(chat_id, gender=selected_gender):
-            send_bot_message(chat_id, "⚠️ មិនអាចរក្សាទុកភេទបានទេ។ សូមសាកម្តងទៀត។")
-            return True
-        user_state["gender"] = selected_gender
-    elif step == "province":
+        user_state["onboarding_step"] = ONBOARDING_STEP_PROVINCE
+        user_state["onboarding_completed"] = False
+        send_bot_message(chat_id, "✅ បានរក្សាទុកឈ្មោះរួចហើយ។")
+        send_onboarding_prompt(chat_id, ONBOARDING_STEP_PROVINCE)
+        return True
+
+    if step == ONBOARDING_STEP_PROVINCE:
         clean_province = value[:100]
-        if not update_user_profile(chat_id, province=clean_province):
+        if not update_user_profile(
+            chat_id,
+            province=clean_province,
+            onboarding_step=ONBOARDING_STEP_GENDER,
+            onboarding_completed=0,
+        ):
             send_bot_message(chat_id, "⚠️ មិនអាចរក្សាទុកខេត្ត/តំបន់បានទេ។ សូមសាកម្តងទៀត។")
             return True
         user_state["province"] = clean_province
-    elif step == "crop_interest":
-        selected_crop = CROP_LABEL_TO_VALUE.get(value)
-        if not selected_crop:
-            send_bot_message(chat_id, "⚠️ សូមជ្រើសដំណាំពីប៊ូតុងដែលបានផ្តល់ឲ្យ។")
-            send_onboarding_prompt(chat_id, step)
-            return True
-        if not update_user_profile(chat_id, crop_interest=selected_crop):
-            send_bot_message(chat_id, "⚠️ មិនអាចរក្សាទុកដំណាំចាប់អារម្មណ៍បានទេ។ សូមសាកម្តងទៀត។")
-            return True
-        user_state["crop_interest"] = selected_crop
-
-    is_complete = _sync_onboarding_status(chat_id, user_state)
-    next_step = _next_onboarding_step(user_state)
-    if next_step:
-        send_bot_message(chat_id, "✅ បានរក្សាទុករួចហើយ។")
-        send_onboarding_prompt(chat_id, next_step)
-        return True
-
-    if is_complete:
+        user_state["onboarding_step"] = ONBOARDING_STEP_GENDER
+        user_state["onboarding_completed"] = False
         send_bot_message(
             chat_id,
-            "✅ <b>ការបំពេញប្រវត្តិរូបរួចរាល់!</b>\n"
-            "អ្នកអាចប្រើម៉ឺនុយ និងពាក្យបញ្ជាទាំងអស់បានហើយ។",
+            "✅ <b>ព័ត៌មានសំខាន់បានរក្សាទុករួចហើយ។</b>\n"
+            "ឥឡូវអ្នកអាចបំពេញព័ត៌មានបន្ថែម ឬរំលងសិនក៏បាន។",
             reply_markup=build_main_keyboard(),
         )
-        send_profile_card(chat_id, user_state, fallback_name)
+        send_onboarding_prompt(chat_id, ONBOARDING_STEP_GENDER)
+        return True
+
+    return False
+
+
+def finish_onboarding(chat_id: int, user_state: dict, fallback_name: str) -> None:
+    user_state["onboarding_step"] = ONBOARDING_STEP_COMPLETED
+    user_state["onboarding_completed"] = True
+    _sync_onboarding_status(chat_id, user_state)
+    send_bot_message(
+        chat_id,
+        "✅ <b>ការបំពេញប្រវត្តិរូបរួចរាល់!</b>\n"
+        "អ្នកអាចប្រើម៉ឺនុយ និងពាក្យបញ្ជាទាំងអស់បានដោយសេរី។",
+        reply_markup=build_main_keyboard(),
+    )
+    send_profile_card(chat_id, user_state, fallback_name)
+
+
+def handle_onboarding_callback(callback_query: dict) -> bool:
+    data = callback_query.get("data", "")
+    if not data.startswith("onboard:"):
+        return False
+
+    message = callback_query.get("message") or {}
+    chat = message.get("chat") or {}
+    chat_id = chat.get("id")
+    message_id = message.get("message_id")
+    from_user = callback_query.get("from") or {}
+    if not chat_id or not message_id:
+        return True
+
+    pseudo_message = {"chat": chat, "from": from_user}
+    user_state = register_or_update_user(pseudo_message)
+    _normalize_onboarding_state(user_state)
+    fallback_name = _display_name(
+        from_user.get("first_name", ""),
+        from_user.get("username", ""),
+    )
+
+    parts = data.split(":")
+    if len(parts) != 3:
+        bot.answer_callback_query(callback_query["id"], "មិនស្គាល់សកម្មភាពនេះទេ។")
+        return True
+
+    _, category, action = parts
+
+    if category == "gender":
+        if action == "back_province":
+            if update_user_profile(
+                chat_id,
+                onboarding_step=ONBOARDING_STEP_PROVINCE,
+                onboarding_completed=0,
+            ):
+                user_state["onboarding_step"] = ONBOARDING_STEP_PROVINCE
+                user_state["onboarding_completed"] = False
+            bot.answer_callback_query(callback_query["id"], "បានត្រឡប់ទៅជំហានខេត្ត។")
+            edit_bot_message(
+                chat_id,
+                message_id,
+                "◀️ <b>ត្រឡប់ទៅជំហានខេត្ត/តំបន់</b>\nសូមវាយឈ្មោះខេត្ត ឬ តំបន់របស់អ្នកម្តងទៀត។",
+            )
+            send_onboarding_prompt(chat_id, ONBOARDING_STEP_PROVINCE)
+            return True
+
+        gender_value = {
+            "male": GENDER_MALE,
+            "female": GENDER_FEMALE,
+            "other": GENDER_OTHER,
+            "skip": GENDER_SKIPPED,
+        }.get(action)
+        if not gender_value:
+            bot.answer_callback_query(callback_query["id"], "ជម្រើសមិនត្រឹមត្រូវ។")
+            return True
+
+        if update_user_profile(
+            chat_id,
+            gender=gender_value,
+            onboarding_step=ONBOARDING_STEP_CROP,
+            onboarding_completed=0,
+        ):
+            user_state["gender"] = gender_value
+            user_state["onboarding_step"] = ONBOARDING_STEP_CROP
+            user_state["onboarding_completed"] = False
+
+        status_text = (
+            "បានរំលងការបញ្ជាក់ភេទ។"
+            if action == "skip"
+            else f"បានរក្សាទុកភេទជា <b>{_format_gender(gender_value)}</b>។"
+        )
+        bot.answer_callback_query(callback_query["id"], "បានរក្សាទុករួចហើយ។")
+        edit_bot_message(chat_id, message_id, f"✅ {status_text}")
+        send_onboarding_prompt(chat_id, ONBOARDING_STEP_CROP)
+        return True
+
+    if category == "crop":
+        if action == "back_gender":
+            if update_user_profile(
+                chat_id,
+                onboarding_step=ONBOARDING_STEP_GENDER,
+                onboarding_completed=0,
+            ):
+                user_state["onboarding_step"] = ONBOARDING_STEP_GENDER
+                user_state["onboarding_completed"] = False
+            bot.answer_callback_query(callback_query["id"], "បានត្រឡប់ទៅជំហានភេទ។")
+            edit_bot_message(
+                chat_id,
+                message_id,
+                "◀️ <b>ត្រឡប់ទៅជំហានភេទ</b>\nសូមជ្រើសភេទរបស់អ្នកម្តងទៀត។",
+            )
+            send_onboarding_prompt(chat_id, ONBOARDING_STEP_GENDER)
+            return True
+
+        crop_value = {
+            "rice": "ស្រូវ",
+            "pepper": "ម្ទេស",
+            "rice_pepper": "ស្រូវ និង ម្ទេស",
+            "other": "ផ្សេងៗ",
+            "skip": CROP_SKIPPED,
+        }.get(action)
+        if not crop_value:
+            bot.answer_callback_query(callback_query["id"], "ជម្រើសមិនត្រឹមត្រូវ។")
+            return True
+
+        if update_user_profile(
+            chat_id,
+            crop_interest=crop_value,
+            onboarding_step=ONBOARDING_STEP_COMPLETED,
+            onboarding_completed=1,
+        ):
+            user_state["crop_interest"] = crop_value
+            user_state["onboarding_step"] = ONBOARDING_STEP_COMPLETED
+            user_state["onboarding_completed"] = True
+
+        status_text = (
+            "បានរំលងការជ្រើសដំណាំចាប់អារម្មណ៍។"
+            if action == "skip"
+            else f"បានរក្សាទុកដំណាំជា <b>{escape(crop_value)}</b>។"
+        )
+        bot.answer_callback_query(callback_query["id"], "បានរក្សាទុករួចហើយ។")
+        edit_bot_message(chat_id, message_id, f"✅ {status_text}")
+        finish_onboarding(chat_id, user_state, fallback_name)
+        return True
+
+    bot.answer_callback_query(callback_query["id"], "មិនស្គាល់សកម្មភាពនេះទេ។")
     return True
 
 
@@ -1034,10 +1288,7 @@ def send_recent_users(chat_id: int) -> None:
         gender = _format_gender(gender_value)
         user_icon = _user_icon(is_admin_user, gender_value)
         province = escape((user.get("province") or "មិនទាន់កំណត់").strip() or "មិនទាន់កំណត់")
-        crop_interest = escape(
-            (user.get("crop_interest") or "មិនទាន់កំណត់").strip()
-            or "មិនទាន់កំណត់"
-        )
+        crop_interest = escape(_crop_label(user.get("crop_interest") or ""))
         joined_date = _format_datetime(user["joined_date"])
         completion_badge = (
             ""
@@ -1063,6 +1314,7 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
     if normalized_text.startswith("/"):
         command = normalized_text.split()[0].split("@")[0].lower()
     user_name = _display_name(user.get("first_name", ""), user.get("username", ""))
+    _normalize_onboarding_state(user_state)
     onboarding_step = _next_onboarding_step(user_state)
 
     if command == "/editprofile":
@@ -1086,6 +1338,7 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
         user_state["province"] = ""
         user_state["crop_interest"] = ""
         user_state["onboarding_completed"] = False
+        user_state["onboarding_step"] = ONBOARDING_STEP_FULL_NAME
 
         send_bot_message(
             chat_id,
@@ -1093,7 +1346,7 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
             "សូមបំពេញព័ត៌មានរបស់អ្នកម្តងទៀត។",
             reply_markup=telebot.types.ReplyKeyboardRemove(),
         )
-        send_onboarding_prompt(chat_id, "full_name")
+        send_onboarding_prompt(chat_id, ONBOARDING_STEP_FULL_NAME)
         return
 
     if command == "/profile":
@@ -1101,24 +1354,23 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
         return
 
     if command == "/start":
-        if onboarding_step:
+        if onboarding_step in {ONBOARDING_STEP_FULL_NAME, ONBOARDING_STEP_PROVINCE}:
             send_onboarding_intro(chat_id, user_state, user_name)
+            send_onboarding_prompt(chat_id, onboarding_step)
+        elif onboarding_step in {ONBOARDING_STEP_GENDER, ONBOARDING_STEP_CROP}:
+            send_welcome(chat_id, user_name, user_state)
+            send_soft_profile_reminder(chat_id, user_state)
             send_onboarding_prompt(chat_id, onboarding_step)
         else:
             _sync_onboarding_status(chat_id, user_state)
             send_welcome(chat_id, user_name, user_state)
         return
 
-    if onboarding_step and command and command not in {"/help"}:
-        send_bot_message(
-            chat_id,
-            "📝 <b>សូមបំពេញប្រវត្តិរូបជាមុនសិន</b>\n"
-            "ប្រើ <code>/start</code> ដើម្បីបន្ត ឬ <code>/editprofile</code> ដើម្បីចាប់ផ្តើមសារជាថ្មី។",
-        )
-        send_onboarding_prompt(chat_id, onboarding_step)
-        return
-
-    if onboarding_step and not command:
+    if (
+        onboarding_step in {ONBOARDING_STEP_FULL_NAME, ONBOARDING_STEP_PROVINCE}
+        and not command
+        and normalized_text not in BUTTON_RESPONSES
+    ):
         if process_onboarding_input(chat_id, text, user_state, user_name):
             return
 
@@ -1126,18 +1378,16 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
         send_bot_message(
             chat_id,
             build_help_text(user_state),
-            reply_markup=(
-                telebot.types.ReplyKeyboardRemove()
-                if onboarding_step
-                else build_main_keyboard()
-            ),
+            reply_markup=build_main_keyboard(),
         )
         if onboarding_step:
-            send_onboarding_prompt(chat_id, onboarding_step)
+            send_soft_profile_reminder(chat_id, user_state)
         return
 
     if command in COMMAND_TO_BUTTON:
         send_bot_message(chat_id, BUTTON_RESPONSES[COMMAND_TO_BUTTON[command]])
+        if onboarding_step:
+            send_soft_profile_reminder(chat_id, user_state)
         return
 
     if command == "/users":
@@ -1151,6 +1401,8 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
                 "\u1796\u17b6\u1780\u17d2\u1799\u1794\u1789\u17d2\u1787\u17b6\u1793\u17c1\u17c7\u17a2\u17b6\u1785"
                 "\u1794\u17d2\u179a\u17be\u1794\u17b6\u1793\u178f\u17c2\u178a\u17c4\u1799\u17a2\u17d2\u1793\u1780\u1782\u17d2\u179a\u1794\u17cb\u1782\u17d2\u179a\u1784\u1794\u17c9\u17bb\u178e\u17d2\u178e\u17c4\u17c7\u17d4",
             )
+        if onboarding_step:
+            send_soft_profile_reminder(chat_id, user_state)
         return
 
     if command == "/recentusers":
@@ -1164,10 +1416,14 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
                 "\u1796\u17b6\u1780\u17d2\u1799\u1794\u1789\u17d2\u1787\u17b6\u1793\u17c1\u17c7\u17a2\u17b6\u1785"
                 "\u1794\u17d2\u179a\u17be\u1794\u17b6\u1793\u178f\u17c2\u178a\u17c4\u1799\u17a2\u17d2\u1793\u1780\u1782\u17d2\u179a\u1794\u17cb\u1782\u17d2\u179a\u1784\u1794\u17c9\u17bb\u178e\u17d2\u178e\u17c4\u17c7\u17d4",
             )
+        if onboarding_step:
+            send_soft_profile_reminder(chat_id, user_state)
         return
 
     response = BUTTON_RESPONSES.get(text, FALLBACK_TEXT)
     send_bot_message(chat_id, response)
+    if onboarding_step:
+        send_soft_profile_reminder(chat_id, user_state)
 
 
 @app.post(WEBHOOK_PATH)
@@ -1175,6 +1431,22 @@ def telegram_webhook():
     _validate_telegram_request()
 
     update = request.get_json(silent=True) or {}
+    callback_query = update.get("callback_query")
+    if callback_query:
+        callback_data = callback_query.get("data", "")
+        from_user = callback_query.get("from", {})
+        logger.info(
+            "Incoming Telegram callback: chat_id=%s data=%r",
+            (callback_query.get("message") or {}).get("chat", {}).get("id"),
+            callback_data,
+        )
+        try:
+            if handle_onboarding_callback(callback_query):
+                return "OK", 200
+        except Exception:
+            logger.exception("Failed to handle Telegram callback.")
+            return "ERROR", 500
+
     message = update.get("message") or update.get("edited_message")
     if not message:
         return "OK", 200
