@@ -773,7 +773,7 @@ def build_setup_province_keyboard() -> telebot.types.InlineKeyboardMarkup:
         for p in CAMBODIA_PROVINCES
     ]
     kb.add(*buttons)
-    kb.add(telebot.types.InlineKeyboardButton("◀️ ត្រល់តោបភេត", callback_data="setup:back"))
+    kb.add(telebot.types.InlineKeyboardButton("◀️ ថយក្រោយ", callback_data="setup:back"))
     return kb
 
 
@@ -810,7 +810,7 @@ def build_gender_keyboard():
             "⏭️ រំលង", callback_data="onboard:gender:skip"
         ),
         telebot.types.InlineKeyboardButton(
-            "◀️ កែខេត្ត", callback_data="onboard:gender:back_province"
+            "◀️ ថយក្រោយ", callback_data="onboard:gender:back_province"
         ),
     )
     return markup
@@ -839,7 +839,7 @@ def build_crop_keyboard():
             "⏭️ រំលង", callback_data="onboard:crop:skip"
         ),
         telebot.types.InlineKeyboardButton(
-            "◀️ ត្រឡប់ទៅភេទ", callback_data="onboard:crop:back_gender"
+            "◀️ ថយក្រោយ", callback_data="onboard:crop:back_gender"
         ),
     )
     return markup
