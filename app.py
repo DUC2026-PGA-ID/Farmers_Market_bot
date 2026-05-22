@@ -604,10 +604,8 @@ def get_recent_users(limit: int = 10):
                 chat_id,
                 first_name,
                 username,
-                full_name,
                 gender,
                 province,
-                crop_interest,
                 onboarding_completed,
                 joined_date
             FROM users
@@ -1619,11 +1617,10 @@ def send_recent_users(chat_id: int) -> None:
         "<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>\n",
     ]
     for index, user in enumerate(recent_users, start=1):
-        display_name = user.get("full_name") or user.get("first_name")
-        name = escape(display_name or "មិនទាន់មានឈ្មោះ")
+        name = escape(user.get("first_name") or "មិនទាន់មានឈ្មោះ")
         is_admin_user = user["chat_id"] in ADMIN_USER_IDS
         admin_badge = " 🛡️ <b>[ADMIN]</b>" if is_admin_user else " 🌾 <b>[សមាជិក]</b>"
-        
+
         gender_value = user.get("gender") or DEFAULT_GENDER
         user_icon = "👤"
         if gender_value == GENDER_MALE:
@@ -1632,23 +1629,22 @@ def send_recent_users(chat_id: int) -> None:
             user_icon = "👩"
 
         province = escape((user.get("province") or "មិនទាន់កំណត់").strip() or "មិនទាន់កំណត់")
-        crop_interest = escape(_crop_label(user.get("crop_interest") or ""))
         joined_date = _format_datetime(user["joined_date"])
         completion_badge = (
             ""
             if user.get("onboarding_completed")
-            else " ⚠️ <i>(កំពុងបំពេញប្រវត្តិរូប)</i>"
+            else " ⚠️ <i>(មិនទាន់បញ្ចប់)</i>"
         )
-        
+
         username_val = user.get("username")
         username_text = f"@{escape(username_val)}" if username_val else "<i>គ្មាន</i>"
-        
+
         lines.append(
             f"{user_icon} <b>#{index} {name}</b>{admin_badge}{completion_badge}\n"
             f"• 🆔 <b>ID:</b> <code>{user['chat_id']}</code>\n"
             f"• 🏷️ <b>គណនី:</b> {username_text}\n"
+            f"• ⚧️ <b>ភេទ:</b> {_format_gender(gender_value)}\n"
             f"• 📍 <b>ខេត្ត/ក្រុង:</b> {province}\n"
-            f"• 🌾 <b>ដំណាំ:</b> {crop_interest}\n"
             f"• 📅 <b>ចូលរួម:</b> <code>{joined_date}</code>\n"
         )
 
