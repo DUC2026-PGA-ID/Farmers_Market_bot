@@ -737,6 +737,31 @@ def _validate_telegram_request() -> None:
             abort(403)
 
 
+CAMBODIA_PROVINCES = [
+    "ភ្នំពេញ", "បន្ទាយមានជ័យ", "បាត់ដំបង",
+    "កំពង់ចាម", "កំពង់ឆ្នាំង", "កំពង់ស្ពឺ",
+    "កំពង់ធំ", "កំពត", "កណ្តាល",
+    "កោះកុង", "ក្រចេះ", "មណ្ឌលគិរី",
+    "ព្រះវិហារ", "ព្រៃវែង", "ពោធិ៍សាត់",
+    "រតនគិរី", "សៀមរាប", "ព្រះសីហនុ",
+    "ស្ទឹងត្រែង", "ស្វាយរៀង", "តាកែវ",
+    "ឧត្តរមានជ័យ", "កែប", "ប៉ៃលិន", "ត្បូងឃ្មុំ",
+]
+
+
+def build_province_keyboard() -> telebot.types.InlineKeyboardMarkup:
+    kb = telebot.types.InlineKeyboardMarkup(row_width=3)
+    buttons = [
+        telebot.types.InlineKeyboardButton(
+            text=p,
+            callback_data=f"prov:select:{p}",
+        )
+        for p in CAMBODIA_PROVINCES
+    ]
+    kb.add(*buttons)
+    return kb
+
+
 def build_main_keyboard():
     markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     markup.add(
@@ -1204,6 +1229,39 @@ def build_edit_profile_keyboard() -> telebot.types.InlineKeyboardMarkup:
 
 def handle_onboarding_callback(callback_query: dict) -> bool:
     data = callback_query.get("data", "")
+
+    # ── Province selection ──
+    if data.startswith("prov:select:"):
+        message = callback_query.get("message") or {}
+        chat = message.get("chat") or {}
+        chat_id = chat.get("id")
+        message_id = message.get("message_id")
+        if not chat_id:
+            return True
+        province = data[len("prov:select:"):]
+        if province and update_user_profile(
+            chat_id,
+            province=province,
+            onboarding_completed=1,
+            onboarding_step=ONBOARDING_STEP_COMPLETED,
+        ):
+            with _user_cache_lock:
+                _user_cache.pop(chat_id, None)
+            bot.answer_callback_query(callback_query["id"], "")
+            edit_bot_message(
+                chat_id,
+                message_id,
+                f"🗺️ <b>ខេត្ត/ក្រុង:</b> {province}\n\n"
+                "✅ <b>បានរក្សាទុករួចហើយ!</b>",
+            )
+            send_bot_message(
+                chat_id,
+                "🌾 ប្រើម៉ឺនុយខាងក្រោមដើម្បីមើលទីផ្សារ:",
+                reply_markup=build_main_keyboard(),
+            )
+        else:
+            bot.answer_callback_query(callback_query["id"], "មិនអាចរក្សាទុកបានទេ។ សូមសាកម្តងទៀត។")
+        return True
 
     # ── Edit-profile field selection via inline keyboard ──
     if data.startswith("edit:field:"):
