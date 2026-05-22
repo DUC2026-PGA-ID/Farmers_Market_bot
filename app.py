@@ -856,29 +856,10 @@ def _crop_label(value: str) -> str:
 
 
 def _normalize_onboarding_state(user_state: dict) -> dict:
-    step = (user_state.get("onboarding_step") or "").strip()
-
-    if not (user_state.get("full_name") or "").strip():
-        step = ONBOARDING_STEP_FULL_NAME
-    elif not (user_state.get("province") or "").strip():
-        step = ONBOARDING_STEP_PROVINCE
-    elif step not in {
-        ONBOARDING_STEP_GENDER,
-        ONBOARDING_STEP_CROP,
-        ONBOARDING_STEP_COMPLETED,
-    }:
-        step = (
-            ONBOARDING_STEP_COMPLETED
-            if user_state.get("onboarding_completed")
-            else ONBOARDING_STEP_GENDER
-        )
-
-    if step == ONBOARDING_STEP_COMPLETED:
-        user_state["onboarding_completed"] = True
-    else:
-        user_state["onboarding_completed"] = False
-
-    user_state["onboarding_step"] = step
+    # Onboarding is now fully optional – users go straight to the main menu.
+    # Profile data (name, province, gender, crop) is collected via /editprofile.
+    user_state["onboarding_step"] = ONBOARDING_STEP_COMPLETED
+    user_state["onboarding_completed"] = True
     return user_state
 
 
@@ -1474,13 +1455,16 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
         user_state["gender"] = DEFAULT_GENDER
         user_state["province"] = ""
         user_state["crop_interest"] = ""
-        user_state["onboarding_completed"] = False
-        user_state["onboarding_step"] = ONBOARDING_STEP_FULL_NAME
+        user_state["onboarding_completed"] = True
+        user_state["onboarding_step"] = ONBOARDING_STEP_COMPLETED
 
         send_bot_message(
             chat_id,
-            "🛠️ <b>បានចាប់ផ្តើមកែប្រវត្តិរូបឡើងវិញ</b>\n"
-            "សូមបំពេញព័ត៌មានរបស់អ្នកម្តងទៀត។",
+            "🛠️ <b>កែប្រវត្តិរូប (Edit Profile)</b>\n"
+            "<code>━━━━━━━━━━━━━━━━━━</code>\n"
+            "ព័ត៌មានរបស់អ្នកបានលុបចោលរួចហើយ។ "
+            "ឥឡូវបំពេញព័ត៌មានដែលអ្នកចង់បាន៖\n\n"
+            "• ✏️ ឈ្មោះ · ខេត្ត · ភេទ · ដំណាំ",
             reply_markup=telebot.types.ReplyKeyboardRemove(),
         )
         send_onboarding_prompt(chat_id, ONBOARDING_STEP_FULL_NAME)
@@ -1491,25 +1475,15 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
         return
 
     if command == "/start":
-        if onboarding_step in {ONBOARDING_STEP_FULL_NAME, ONBOARDING_STEP_PROVINCE}:
-            send_onboarding_intro(chat_id, user_state, user_name)
-            send_onboarding_prompt(chat_id, onboarding_step)
-        elif onboarding_step in {ONBOARDING_STEP_GENDER, ONBOARDING_STEP_CROP}:
-            send_welcome(chat_id, user_name, user_state)
-            send_soft_profile_reminder(chat_id, user_state)
-            send_onboarding_prompt(chat_id, onboarding_step)
-        else:
-            _sync_onboarding_status(chat_id, user_state)
-            send_welcome(chat_id, user_name, user_state)
+        send_welcome(chat_id, user_name, user_state)
+        if user_state.get("is_new_user"):
+            send_bot_message(
+                chat_id,
+                "💡 <i>គន្លឹះ: អ្នកអាចបំពេញប្រវត្តិរូបរបស់អ្នក "
+                "(ឈ្មោះ, ខេត្ត, ភេទ, ដំណាំ) "
+                "នៅពេលដែលអ្នកចង់បាន តាមរយៈ <b>/editprofile</b></i>"
+            )
         return
-
-    if (
-        onboarding_step in {ONBOARDING_STEP_FULL_NAME, ONBOARDING_STEP_PROVINCE}
-        and not command
-        and normalized_text not in BUTTON_RESPONSES
-    ):
-        if process_onboarding_input(chat_id, text, user_state, user_name):
-            return
 
     if command == "/help":
         send_bot_message(
@@ -1517,14 +1491,10 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
             build_help_text(user_state),
             reply_markup=build_main_keyboard(),
         )
-        if onboarding_step:
-            send_soft_profile_reminder(chat_id, user_state)
         return
 
     if command in COMMAND_TO_BUTTON:
         send_bot_message(chat_id, BUTTON_RESPONSES[COMMAND_TO_BUTTON[command]])
-        if onboarding_step:
-            send_soft_profile_reminder(chat_id, user_state)
         return
 
     if command == "/users":
@@ -1538,8 +1508,6 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
                 "\u1796\u17b6\u1780\u17d2\u1799\u1794\u1789\u17d2\u1787\u17b6\u1793\u17c1\u17c7\u17a2\u17b6\u1785"
                 "\u1794\u17d2\u179a\u17be\u1794\u17b6\u1793\u178f\u17c2\u178a\u17c4\u1799\u17a2\u17d2\u1793\u1780\u1782\u17d2\u179a\u1794\u17cb\u1782\u17d2\u179a\u1784\u1794\u17c9\u17bb\u178e\u17d2\u178e\u17c4\u17c7\u17d4",
             )
-        if onboarding_step:
-            send_soft_profile_reminder(chat_id, user_state)
         return
 
     if command == "/recentusers":
@@ -1553,14 +1521,10 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
                 "\u1796\u17b6\u1780\u17d2\u1799\u1794\u1789\u17d2\u1787\u17b6\u1793\u17c1\u17c7\u17a2\u17b6\u1785"
                 "\u1794\u17d2\u179a\u17be\u1794\u17b6\u1793\u178f\u17c2\u178a\u17c4\u1799\u17a2\u17d2\u1793\u1780\u1782\u17d2\u179a\u1794\u17cb\u1782\u17d2\u179a\u1784\u1794\u17c9\u17bb\u178e\u17d2\u178e\u17c4\u17c7\u17d4",
             )
-        if onboarding_step:
-            send_soft_profile_reminder(chat_id, user_state)
         return
 
     response = BUTTON_RESPONSES.get(text, FALLBACK_TEXT)
     send_bot_message(chat_id, response)
-    if onboarding_step:
-        send_soft_profile_reminder(chat_id, user_state)
 
 
 @app.post(WEBHOOK_PATH)
