@@ -165,8 +165,6 @@ COMMAND_TO_BUTTON = {
 GLOBAL_BOT_COMMANDS = [
     telebot.types.BotCommand("start", "ម៉ឺនុយមេ"),
     telebot.types.BotCommand("help", "មើលបញ្ជីពាក្យបញ្ជា"),
-    telebot.types.BotCommand("profile", "មើលប្រវត្តិរូប"),
-    telebot.types.BotCommand("editprofile", "កែប្រវត្តិរូប"),
     telebot.types.BotCommand("rice", "មើលតម្លៃស្រូវ"),
     telebot.types.BotCommand("pepper", "មើលតម្លៃម្ទេស"),
     telebot.types.BotCommand("market", "មើលស្ថានភាពទីផ្សារ"),
@@ -1549,56 +1547,22 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
         if process_onboarding_input(chat_id, text, user_state, user_name):
             return
 
-    if command == "/editprofile":
-        if not user_state.get("db_enabled"):
-            send_bot_message(
-                chat_id,
-                "⚠️ <b>មិនអាចកែប្រវត្តិរូបបានទេ</b>\n"
-                "សូមពិនិត្យការកំណត់មូលដ្ឋានទិន្នន័យម្តងទៀត។",
-            )
-            return
-
-        if not reset_user_profile(chat_id):
-            send_bot_message(
-                chat_id,
-                "⚠️ មិនអាចចាប់ផ្តើមកែប្រវត្តិរូបឡើងវិញបានទេ។ សូមសាកម្តងទៀត។",
-            )
-            return
-
-        user_state["full_name"] = ""
-        user_state["gender"] = DEFAULT_GENDER
-        user_state["province"] = ""
-        user_state["crop_interest"] = ""
-        user_state["onboarding_completed"] = True
-        user_state["onboarding_step"] = ONBOARDING_STEP_COMPLETED
-
-        send_bot_message(
-            chat_id,
-            "🛠️ <b>កែប្រវត្តិរូប (Edit Profile)</b>\n"
-            "<code>━━━━━━━━━━━━━━━━━━</code>\n"
-            "ជ្រើសរើសព័ត៌មានដែលអ្នកចង់កែ៖",
-            reply_markup=telebot.types.ReplyKeyboardRemove(),
-        )
-        send_bot_message(
-            chat_id,
-            "👇 ចុចប៊ូតុងដើម្បីជ្រើស:",
-            reply_markup=build_edit_profile_keyboard(),
-        )
-        return
-
-    if command == "/profile":
-        send_profile_card(chat_id, user_state, user_name)
-        return
-
     if command == "/start":
+
         send_welcome(chat_id, user_name, user_state)
-        if user_state.get("is_new_user"):
-            send_bot_message(
-                chat_id,
-                "💡 <i>គន្លឹះ: អ្នកអាចបំពេញប្រវត្តិរូបរបស់អ្នក "
-                "(ឈ្មោះ, ខេត្ត, ភេទ, ដំណាំ) "
-                "នៅពេលដែលអ្នកចង់បាន តាមរយៈ <b>/editprofile</b></i>"
-            )
+        current_province = (user_state.get("province") or "").strip()
+        prov_hint = (
+            f"📍 <b>ខេត្ត/ក្រុងបច្ចុប្បន្ន:</b> {current_province}\n\n"
+            if current_province else ""
+        )
+        send_bot_message(
+            chat_id,
+            "🗺️ <b>ជ្រើសរើស ខេត្ត/ក្រុង របស់អ្នក</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            + prov_hint
+            + "👇 ចុចខេត្ត/ក្រុង ដែលអ្នករស់នៅ:",
+            reply_markup=build_province_keyboard(),
+        )
         return
 
     if command == "/help":
