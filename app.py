@@ -856,10 +856,19 @@ def _crop_label(value: str) -> str:
 
 
 def _normalize_onboarding_state(user_state: dict) -> dict:
-    # Onboarding is now fully optional – users go straight to the main menu.
-    # Profile data (name, province, gender, crop) is collected via /editprofile.
-    user_state["onboarding_step"] = ONBOARDING_STEP_COMPLETED
-    user_state["onboarding_completed"] = True
+    # Onboarding is fully optional. Field-capture mode only activates
+    # when the user explicitly chose to edit a field via /editprofile menu.
+    step = (user_state.get("onboarding_step") or "").strip()
+    editing_steps = {
+        ONBOARDING_STEP_FULL_NAME,
+        ONBOARDING_STEP_PROVINCE,
+        ONBOARDING_STEP_GENDER,
+        ONBOARDING_STEP_CROP,
+    }
+    if step not in editing_steps:
+        step = ONBOARDING_STEP_COMPLETED
+    user_state["onboarding_step"] = step
+    user_state["onboarding_completed"] = (step == ONBOARDING_STEP_COMPLETED)
     return user_state
 
 
@@ -1125,10 +1134,17 @@ def process_onboarding_input(
             send_bot_message(chat_id, "⚠️ មិនអាចរក្សាទុកឈ្មោះបានទេ។ សូមសាកម្តងទៀត។")
             return True
         user_state["full_name"] = clean_name
-        user_state["onboarding_step"] = ONBOARDING_STEP_PROVINCE
-        user_state["onboarding_completed"] = False
-        send_bot_message(chat_id, "✅ បានរក្សាទុកឈ្មោះរួចហើយ។")
-        send_onboarding_prompt(chat_id, ONBOARDING_STEP_PROVINCE)
+        user_state["onboarding_step"] = ONBOARDING_STEP_COMPLETED
+        user_state["onboarding_completed"] = True
+        send_bot_message(
+            chat_id,
+            "✅ <b>បានរក្សាទុកឈ្មោះ:</b> " + escape(clean_name),
+        )
+        send_bot_message(
+            chat_id,
+            "👇 ចង់កែព័ត៌មានផ្សេងទៀតទេ?",
+            reply_markup=build_edit_profile_keyboard(),
+        )
         return True
 
     if step == ONBOARDING_STEP_PROVINCE:
@@ -1142,15 +1158,18 @@ def process_onboarding_input(
             send_bot_message(chat_id, "⚠️ មិនអាចរក្សាទុកខេត្ត/តំបន់បានទេ។ សូមសាកម្តងទៀត។")
             return True
         user_state["province"] = clean_province
-        user_state["onboarding_step"] = ONBOARDING_STEP_GENDER
-        user_state["onboarding_completed"] = False
+        user_state["onboarding_step"] = ONBOARDING_STEP_COMPLETED
+        user_state["onboarding_completed"] = True
         send_bot_message(
             chat_id,
-            "✅ <b>ព័ត៌មានសំខាន់បានរក្សាទុករួចហើយ។</b>\n"
-            "ឥឡូវអ្នកអាចបំពេញព័ត៌មានបន្ថែម ឬរំលងសិនក៏បាន។",
+            "✅ <b>បានរក្សាទុកខេត្ត/ក្រុង:</b> " + escape(clean_province),
             reply_markup=build_main_keyboard(),
         )
-        send_onboarding_prompt(chat_id, ONBOARDING_STEP_GENDER)
+        send_bot_message(
+            chat_id,
+            "👇 ចង់កែព័ត៌មានផ្សេងទៀតទេ?",
+            reply_markup=build_edit_profile_keyboard(),
+        )
         return True
 
     return False
@@ -1169,8 +1188,85 @@ def finish_onboarding(chat_id: int, user_state: dict, fallback_name: str) -> Non
     send_profile_card(chat_id, user_state, fallback_name)
 
 
+def build_edit_profile_keyboard() -> telebot.types.InlineKeyboardMarkup:
+    kb = telebot.types.InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        telebot.types.InlineKeyboardButton("✏️ ឈ្មោះ (Name)", callback_data="edit:field:name"),
+        telebot.types.InlineKeyboardButton("📍 ខេត្ត/ក្រុង", callback_data="edit:field:province"),
+    )
+    kb.add(
+        telebot.types.InlineKeyboardButton("⚧️ ភេទ (Gender)", callback_data="edit:field:gender"),
+        telebot.types.InlineKeyboardButton("🌾 ដំណាំ (Crop)", callback_data="edit:field:crop"),
+    )
+    kb.add(
+        telebot.types.InlineKeyboardButton("✔️ រួចរាល់ (Done)", callback_data="edit:field:done"),
+    )
+    return kb
+
+
 def handle_onboarding_callback(callback_query: dict) -> bool:
     data = callback_query.get("data", "")
+
+    # ── Edit-profile field selection via inline keyboard ──
+    if data.startswith("edit:field:"):
+        message = callback_query.get("message") or {}
+        chat = message.get("chat") or {}
+        chat_id = chat.get("id")
+        message_id = message.get("message_id")
+        if not chat_id:
+            return True
+        action = data.split(":")[-1]
+
+        if action in {"done", "cancel"}:
+            update_user_profile(chat_id, onboarding_step=ONBOARDING_STEP_COMPLETED, onboarding_completed=1)
+            bot.answer_callback_query(callback_query["id"], "")
+            msg = ("✅ <b>រួចរាល់!</b> ប្រើ <code>/profile</code> ដើម្បីមើលប្រវត្តិរូប។"
+                   if action == "done" else
+                   "❌ <b>បានបោះបង់ការកែប្រវត្តិរូប។</b>")
+            edit_bot_message(chat_id, message_id, msg)
+            return True
+
+        if action == "name":
+            update_user_profile(chat_id, onboarding_step=ONBOARDING_STEP_FULL_NAME, onboarding_completed=0)
+            bot.answer_callback_query(callback_query["id"], "")
+            edit_bot_message(
+                chat_id, message_id,
+                "✏️ <b>កែឈ្មោះ (Edit Name)</b>\n"
+                "សូមវាយ <b>ឈ្មោះពេញ</b> របស់អ្នក\n"
+                "ឧទាហរណ៍: <code>សេង កុមារណាន់</code>",
+            )
+            return True
+
+        if action == "province":
+            update_user_profile(chat_id, onboarding_step=ONBOARDING_STEP_PROVINCE, onboarding_completed=0)
+            bot.answer_callback_query(callback_query["id"], "")
+            edit_bot_message(
+                chat_id, message_id,
+                "📍 <b>កែខេត្ត/ក្រុង (Edit Province)</b>\n"
+                "សូមវាយ <b>ឈ្មោះខេត្ត ឬ ក្រុង</b> របស់អ្នក\n"
+                "ឧទាហរណ៍: <code>ភ្នំពេញ</code>",
+            )
+            return True
+
+        if action == "gender":
+            update_user_profile(chat_id, onboarding_step=ONBOARDING_STEP_GENDER, onboarding_completed=0)
+            bot.answer_callback_query(callback_query["id"], "")
+            edit_bot_message(chat_id, message_id,
+                "⚧️ <b>កែភេទ (Edit Gender)</b>\nសូមជ្រើសភេទរបស់អ្នក:")
+            send_bot_message(chat_id, "⚧️ ជ្រើសភេទ:", reply_markup=build_gender_keyboard())
+            return True
+
+        if action == "crop":
+            update_user_profile(chat_id, onboarding_step=ONBOARDING_STEP_CROP, onboarding_completed=0)
+            bot.answer_callback_query(callback_query["id"], "")
+            edit_bot_message(chat_id, message_id,
+                "🌾 <b>កែដំណាំ (Edit Crop)</b>\nសូមជ្រើសដំណាំ:")
+            send_bot_message(chat_id, "🌾 ជ្រើសដំណាំ:", reply_markup=build_crop_keyboard())
+            return True
+
+        bot.answer_callback_query(callback_query["id"], "")
+        return True
+
     if not data.startswith("onboard:"):
         return False
 
@@ -1242,7 +1338,7 @@ def handle_onboarding_callback(callback_query: dict) -> bool:
         )
         bot.answer_callback_query(callback_query["id"], "បានរក្សាទុករួចហើយ។")
         edit_bot_message(chat_id, message_id, f"✅ {status_text}")
-        send_onboarding_prompt(chat_id, ONBOARDING_STEP_CROP)
+        send_bot_message(chat_id, "👇 ចង់កែព័ត៌មានផ្សេងទៀតទេ?", reply_markup=build_edit_profile_keyboard())
         return True
 
     if category == "crop":
@@ -1291,7 +1387,15 @@ def handle_onboarding_callback(callback_query: dict) -> bool:
         )
         bot.answer_callback_query(callback_query["id"], "បានរក្សាទុករួចហើយ។")
         edit_bot_message(chat_id, message_id, f"✅ {status_text}")
-        finish_onboarding(chat_id, user_state, fallback_name)
+        update_user_profile(chat_id, onboarding_step=ONBOARDING_STEP_COMPLETED, onboarding_completed=1)
+        user_state["onboarding_step"] = ONBOARDING_STEP_COMPLETED
+        user_state["onboarding_completed"] = True
+        send_bot_message(
+            chat_id,
+            "✅ <b>បានរក្សាទុករួចហើយ!</b>\n"
+            "ប្រើ <code>/profile</code> ដើម្បីមើលប្រវត្តិរូបរបស់អ្នក។",
+            reply_markup=build_main_keyboard(),
+        )
         return True
 
     bot.answer_callback_query(callback_query["id"], "មិនស្គាល់សកម្មភាពនេះទេ។")
@@ -1435,6 +1539,16 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
     _normalize_onboarding_state(user_state)
     onboarding_step = _next_onboarding_step(user_state)
 
+    # Capture free text for name/province editing.
+    # Only fires when user explicitly chose to edit a field via /editprofile inline menu.
+    if (
+        onboarding_step in {ONBOARDING_STEP_FULL_NAME, ONBOARDING_STEP_PROVINCE}
+        and not command
+        and normalized_text not in BUTTON_RESPONSES
+    ):
+        if process_onboarding_input(chat_id, text, user_state, user_name):
+            return
+
     if command == "/editprofile":
         if not user_state.get("db_enabled"):
             send_bot_message(
@@ -1462,12 +1576,14 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
             chat_id,
             "🛠️ <b>កែប្រវត្តិរូប (Edit Profile)</b>\n"
             "<code>━━━━━━━━━━━━━━━━━━</code>\n"
-            "ព័ត៌មានរបស់អ្នកបានលុបចោលរួចហើយ។ "
-            "ឥឡូវបំពេញព័ត៌មានដែលអ្នកចង់បាន៖\n\n"
-            "• ✏️ ឈ្មោះ · ខេត្ត · ភេទ · ដំណាំ",
+            "ជ្រើសរើសព័ត៌មានដែលអ្នកចង់កែ៖",
             reply_markup=telebot.types.ReplyKeyboardRemove(),
         )
-        send_onboarding_prompt(chat_id, ONBOARDING_STEP_FULL_NAME)
+        send_bot_message(
+            chat_id,
+            "👇 ចុចប៊ូតុងដើម្បីជ្រើស:",
+            reply_markup=build_edit_profile_keyboard(),
+        )
         return
 
     if command == "/profile":
