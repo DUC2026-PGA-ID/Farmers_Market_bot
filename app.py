@@ -70,27 +70,22 @@ PROFILE_MIGRATIONS = {
         "ALTER TABLE users ADD COLUMN username VARCHAR(255) NULL "
         "AFTER first_name"
     ),
-    "full_name": (
-        "ALTER TABLE users ADD COLUMN full_name VARCHAR(255) NULL "
-        "AFTER username"
-    ),
     "province": (
         "ALTER TABLE users ADD COLUMN province VARCHAR(100) NULL "
         "AFTER gender"
     ),
-    "crop_interest": (
-        "ALTER TABLE users ADD COLUMN crop_interest VARCHAR(100) NULL "
-        "AFTER province"
-    ),
     "onboarding_completed": (
         "ALTER TABLE users ADD COLUMN onboarding_completed "
-        "TINYINT(1) NOT NULL DEFAULT 0 AFTER crop_interest"
+        "TINYINT(1) NOT NULL DEFAULT 0 AFTER province"
     ),
     "onboarding_step": (
         "ALTER TABLE users ADD COLUMN onboarding_step VARCHAR(32) NULL "
         "AFTER onboarding_completed"
     ),
 }
+
+# Columns that are no longer needed — drop them if they still exist
+PROFILE_DROP_COLUMNS = ["full_name", "crop_interest"]
 # Telegram secret tokens only allow a narrow character set, so we derive
 # a stable header-safe token from the configured secret.
 TELEGRAM_SECRET_TOKEN = (
@@ -299,10 +294,16 @@ def _get_db_connection():
 
 
 def _ensure_profile_columns(cursor) -> None:
+    # Add any missing columns
     for column_name, statement in PROFILE_MIGRATIONS.items():
         cursor.execute("SHOW COLUMNS FROM users LIKE %s", (column_name,))
         if cursor.fetchone() is None:
             cursor.execute(statement)
+    # Drop obsolete columns if they still exist
+    for column_name in PROFILE_DROP_COLUMNS:
+        cursor.execute("SHOW COLUMNS FROM users LIKE %s", (column_name,))
+        if cursor.fetchone() is not None:
+            cursor.execute(f"ALTER TABLE users DROP COLUMN `{column_name}`")
 
 
 def ensure_database_ready() -> bool:
@@ -380,12 +381,10 @@ def register_or_update_user(message: dict) -> dict:
         "joined_date": None,
         "first_name": user.get("first_name") or "Farmer",
         "username": user.get("username") or "",
-        "full_name": "",
         "gender": DEFAULT_GENDER,
         "province": "",
-        "crop_interest": "",
         "onboarding_completed": False,
-        "onboarding_step": ONBOARDING_STEP_FULL_NAME,
+        "onboarding_step": ONBOARDING_STEP_COMPLETED,
     }
 
     if not user_id or not chat_id:
@@ -418,10 +417,8 @@ def register_or_update_user(message: dict) -> dict:
                 chat_id,
                 first_name,
                 username,
-                full_name,
                 gender,
                 province,
-                crop_interest,
                 onboarding_completed,
                 onboarding_step,
                 joined_date
@@ -438,18 +435,15 @@ def register_or_update_user(message: dict) -> dict:
             state["joined_date"] = existing_user["joined_date"]
             state["first_name"] = existing_user["first_name"] or latest_first_name
             state["username"] = (existing_user.get("username") or "").strip()
-            state["full_name"] = (existing_user.get("full_name") or "").strip()
             state["gender"] = existing_user["gender"] or DEFAULT_GENDER
             state["province"] = (existing_user.get("province") or "").strip()
-            state["crop_interest"] = (
-                existing_user.get("crop_interest") or ""
-            ).strip()
             state["onboarding_completed"] = bool(
                 existing_user.get("onboarding_completed")
             )
             state["onboarding_step"] = (
                 existing_user.get("onboarding_step") or ""
             ).strip()
+
             
             db_first_name = existing_user.get("first_name") or ""
             db_username = existing_user.get("username") or ""
@@ -508,10 +502,8 @@ def update_user_profile(chat_id: int, **fields) -> bool:
         return False
 
     allowed_fields = {
-        "full_name",
         "gender",
         "province",
-        "crop_interest",
         "onboarding_completed",
         "onboarding_step",
     }
