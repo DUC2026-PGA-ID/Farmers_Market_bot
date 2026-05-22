@@ -762,6 +762,29 @@ def build_province_keyboard() -> telebot.types.InlineKeyboardMarkup:
     return kb
 
 
+def build_setup_gender_keyboard() -> telebot.types.InlineKeyboardMarkup:
+    kb = telebot.types.InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        telebot.types.InlineKeyboardButton("👨 ប្រុស", callback_data="setup:g:male"),
+        telebot.types.InlineKeyboardButton("👩 ស្រី", callback_data="setup:g:female"),
+    )
+    kb.add(
+        telebot.types.InlineKeyboardButton("🤝 មិនបញ្ជាក់", callback_data="setup:g:other"),
+    )
+    return kb
+
+
+def build_setup_province_keyboard() -> telebot.types.InlineKeyboardMarkup:
+    kb = telebot.types.InlineKeyboardMarkup(row_width=3)
+    buttons = [
+        telebot.types.InlineKeyboardButton(text=p, callback_data=f"setup:p:{p}")
+        for p in CAMBODIA_PROVINCES
+    ]
+    kb.add(*buttons)
+    kb.add(telebot.types.InlineKeyboardButton("◀️ ត្រល់តោបភេត", callback_data="setup:back"))
+    return kb
+
+
 def build_main_keyboard():
     markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     markup.add(
@@ -1230,6 +1253,72 @@ def build_edit_profile_keyboard() -> telebot.types.InlineKeyboardMarkup:
 def handle_onboarding_callback(callback_query: dict) -> bool:
     data = callback_query.get("data", "")
 
+    # ── Setup flow: gender → province (for new users) ──
+    if data.startswith("setup:"):
+        message = callback_query.get("message") or {}
+        chat = message.get("chat") or {}
+        chat_id = chat.get("id")
+        message_id = message.get("message_id")
+        if not chat_id:
+            return True
+        parts = data.split(":", 2)
+        sub = parts[1] if len(parts) > 1 else ""
+        val = parts[2] if len(parts) > 2 else ""
+
+        if sub == "back":
+            bot.answer_callback_query(callback_query["id"], "")
+            edit_bot_message(
+                chat_id, message_id,
+                "⚧️ <b>ជំហានទី 1/2: ជ្រើសរើសភេត</b>\n"
+                "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n"
+                "សូមជ្រើសភេតរបស់អ្នក:",
+                reply_markup=build_setup_gender_keyboard(),
+            )
+            return True
+
+        if sub == "g":
+            gender_map = {"male": "ប្រុស", "female": "ស្រី", "other": "មិនបញ្ជាក់"}
+            gender_label = gender_map.get(val, val)
+            if update_user_profile(chat_id, gender=val,
+                                   onboarding_step="setup_province",
+                                   onboarding_completed=0):
+                with _user_cache_lock:
+                    _user_cache.pop(chat_id, None)
+            bot.answer_callback_query(callback_query["id"], "")
+            edit_bot_message(
+                chat_id, message_id,
+                f"✅ ភេត: <b>{gender_label}</b> – បានរឹក្សាតុក!\n\n"
+                "📍 <b>ជំហានទី 2/2: ជ្រើសរើសខេត្ត/ក្រុង</b>\n"
+                "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n"
+                "ចុចខេត្ត ឤ ក្រុងដែអ្នករស់នៅ:",
+                reply_markup=build_setup_province_keyboard(),
+            )
+            return True
+
+        if sub == "p" and val:
+            if update_user_profile(chat_id, province=val,
+                                   onboarding_completed=1,
+                                   onboarding_step="completed"):
+                with _user_cache_lock:
+                    _user_cache.pop(chat_id, None)
+                bot.answer_callback_query(callback_query["id"], "")
+                edit_bot_message(
+                    chat_id, message_id,
+                    f"📍 ខេត្ត/ក្រុង: <b>{val}</b>\n"
+                    "✅ <b>រួចរាល់! បានចុះខេនរួចហើយ។</b>",
+                )
+                send_bot_message(
+                    chat_id,
+                    "🌾 អ្នកអាចផ័បើមូលមើលតម្លៃទីផ្សារបាន។",
+                    reply_markup=build_main_keyboard(),
+                )
+            else:
+                bot.answer_callback_query(callback_query["id"], "មិនអាចរឹក្សាតុកបានទេ។")
+            return True
+
+        bot.answer_callback_query(callback_query["id"], "")
+        return True
+
     # ── Province selection ──
     if data.startswith("prov:select:"):
         message = callback_query.get("message") or {}
@@ -1608,19 +1697,26 @@ def handle_text_message(chat_id: int, text: str, user_state: dict, user: dict) -
     if command == "/start":
 
         send_welcome(chat_id, user_name, user_state)
-        current_province = (user_state.get("province") or "").strip()
-        prov_hint = (
-            f"📍 <b>ខេត្ត/ក្រុងបច្ចុប្បន្ន:</b> {current_province}\n\n"
-            if current_province else ""
-        )
-        send_bot_message(
-            chat_id,
-            "🗺️ <b>ជ្រើសរើស ខេត្ត/ក្រុង របស់អ្នក</b>\n"
-            "━━━━━━━━━━━━━━━━━━━━━━\n"
-            + prov_hint
-            + "👇 ចុចខេត្ត/ក្រុង ដែលអ្នករស់នៅ:",
-            reply_markup=build_province_keyboard(),
-        )
+        province_set = (user_state.get("province") or "").strip()
+        gender_set = (user_state.get("gender") or DEFAULT_GENDER).strip() not in {"", "unknown", DEFAULT_GENDER}
+
+        if province_set and gender_set:
+            # Returning user — setup already complete, just show main menu
+            send_bot_message(
+                chat_id,
+                f"📍 ខេត្ត: <b>{province_set}</b>\n"
+                "🌾 ប្រើម៉ឺនុយខាងក្រោមដើម្បីមើលទីផ្សារ:",
+                reply_markup=build_main_keyboard(),
+            )
+        else:
+            # New or incomplete user — start setup: gender first
+            send_bot_message(
+                chat_id,
+                "⚧️ <b>ជំហានទី 1/2: ជ្រើសរើសភេទ</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                "សូមជ្រើសភេទរបស់អ្នក:",
+                reply_markup=build_setup_gender_keyboard(),
+            )
         return
 
     if command == "/help":
