@@ -177,8 +177,6 @@ FALLBACK_TEXT = (
     "\u179f\u17bc\u1798\u179f\u17b6\u1780\u1798\u17bd\u1799\u1780\u17d2\u1793\u17bb\u1784\u1785\u17c6\u178e\u17c4\u1798:\n"
     "\u2022 <code>/start</code>\n"
     "\u2022 <code>/help</code>\n"
-    "\u2022 <code>/profile</code>\n"
-    "\u2022 <code>/editprofile</code>\n"
     "\u2022 <code>/rice</code>\n"
     "\u2022 <code>/pepper</code>\n"
     "\u2022 <code>/market</code>\n"
@@ -993,10 +991,8 @@ def build_help_text(user_state: dict) -> str:
     lines = [
         "📌 <b>បញ្ជីពាក្យបញ្ជា</b>",
         "━━━━━━━━━━━━",
-        "• <code>/start</code> - បើកម៉ឺនុយមេ",
+        "• <code>/start</code> - ជ្រើសខេត្ត / ម៉ឺនុយមេ",
         "• <code>/help</code> - មើលពាក្យបញ្ជាទាំងអស់",
-        "• <code>/profile</code> - មើលប្រវត្តិរូបរបស់អ្នក",
-        "• <code>/editprofile</code> - កែព័ត៌មានប្រវត្តិរូប",
         "• <code>/rice</code> - មើលតម្លៃស្រូវ",
         "• <code>/pepper</code> - មើលតម្លៃម្ទេស",
         "• <code>/market</code> - មើលស្ថានភាពទីផ្សារ",
@@ -1277,10 +1273,10 @@ def handle_onboarding_callback(callback_query: dict) -> bool:
             bot.answer_callback_query(callback_query["id"], "")
             edit_bot_message(
                 chat_id, message_id,
-                f"✅ ភេត: <b>{gender_label}</b> – បានរឹក្សាតុក!\n\n"
+                f"✅ ភេទ: <b>{gender_label}</b> – បានរក្សាទុក!\n\n"
                 "📍 <b>ជំហានទី 2/2: ជ្រើសរើសខេត្ត/ក្រុង</b>\n"
                 "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n"
-                "ចុចខេត្ត ឤ ក្រុងដែអ្នករស់នៅ:",
+                "ចុចខេត្ត ក្រុងដែអ្នករស់នៅ:",
                 reply_markup=build_setup_province_keyboard(),
             )
             return True
@@ -1295,15 +1291,15 @@ def handle_onboarding_callback(callback_query: dict) -> bool:
                 edit_bot_message(
                     chat_id, message_id,
                     f"📍 ខេត្ត/ក្រុង: <b>{val}</b>\n"
-                    "✅ <b>រួចរាល់! បានចុះខេនរួចហើយ។</b>",
+                    "✅ <b>រួចរាល់! បានចុះខេត្តរួចហើយ។</b>",
                 )
                 send_bot_message(
                     chat_id,
-                    "🌾 អ្នកអាចផ័បើមូលមើលតម្លៃទីផ្សារបាន។",
+                    "🌾 អ្នកអាចមើលតម្លៃទីផ្សារបាន។",
                     reply_markup=build_main_keyboard(),
                 )
             else:
-                bot.answer_callback_query(callback_query["id"], "មិនអាចរឹក្សាតុកបានទេ។")
+                bot.answer_callback_query(callback_query["id"], "មិនអាចរក្សាទុកបានទេ។")
             return True
 
         bot.answer_callback_query(callback_query["id"], "")
@@ -1355,9 +1351,9 @@ def handle_onboarding_callback(callback_query: dict) -> bool:
         if action in {"done", "cancel"}:
             update_user_profile(chat_id, onboarding_step=ONBOARDING_STEP_COMPLETED, onboarding_completed=1)
             bot.answer_callback_query(callback_query["id"], "")
-            msg = ("✅ <b>រួចរាល់!</b> ប្រើ <code>/profile</code> ដើម្បីមើលប្រវត្តិរូប។"
+            msg = ("✅ <b>រួចរាល់! ព័ត៌មានរបស់អ្នកបានរក្សាទុករួចហើយ។</b>"
                    if action == "done" else
-                   "❌ <b>បានបោះបង់ការកែប្រវត្តិរូប។</b>")
+                   "❌ <b>បានបោះបង់ការកែ។</b>")
             edit_bot_message(chat_id, message_id, msg)
             return True
 
@@ -1527,8 +1523,8 @@ def handle_onboarding_callback(callback_query: dict) -> bool:
         user_state["onboarding_completed"] = True
         send_bot_message(
             chat_id,
-            "✅ <b>បានរក្សាទុករួចហើយ!</b>\n"
-            "ប្រើ <code>/profile</code> ដើម្បីមើលប្រវត្តិរូបរបស់អ្នក។",
+            "✅ <b>បានរក្សាទុករួចហើយ!</b>"
+            " ប្រើ <code>/start</code> ដើម្បីចូលម៉ឺនុយ។",
             reply_markup=build_main_keyboard(),
         )
         return True
@@ -1567,7 +1563,6 @@ def send_welcome(chat_id: int, user_name: str, user_state: dict) -> None:
         "🌾 <code>/rice</code> - តម្លៃស្រូវ\n"
         "🌶️ <code>/pepper</code> - តម្លៃម្ទេស\n"
         "📈 <code>/market</code> - ស្ថានភាពទីផ្សារ\n"
-        "🪪 <code>/profile</code> - ប្រវត្តិរូបរបស់អ្នក\n"
         "📞 <code>/contact</code> - ព័ត៌មានសេវាកម្ម\n"
         "❓ <code>/help</code> - ជំនួយបន្ថែម\n"
         "<code>━━━━━━━━━━━━━━━━━━</code>\n"
