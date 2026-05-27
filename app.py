@@ -117,62 +117,44 @@ def _get_db_connection():
 
 
 def _ensure_columns(cursor) -> None:
-    """Add new columns & drop obsolete ones safely."""
-    # Columns to ADD if missing
-    add_cols = {
-        "tg_first_name": (
-            "ALTER TABLE users ADD COLUMN tg_first_name VARCHAR(255) NULL "
-            "AFTER chat_id"
-        ),
-        "tg_username": (
-            "ALTER TABLE users ADD COLUMN tg_username VARCHAR(255) NULL "
-            "AFTER tg_first_name"
-        ),
-        "name": (
-            "ALTER TABLE users ADD COLUMN name VARCHAR(255) NULL "
-            "AFTER tg_username"
-        ),
-        "phone": (
-            "ALTER TABLE users ADD COLUMN phone VARCHAR(20) NULL "
-            "AFTER name"
-        ),
-        "state": (
-            "ALTER TABLE users ADD COLUMN state VARCHAR(20) NOT NULL "
-            "DEFAULT 'START' AFTER phone"
-        ),
-    }
-    for col, sql in add_cols.items():
-        cursor.execute("SHOW COLUMNS FROM users LIKE %s", (col,))
-        if cursor.fetchone() is None:
+    """Add/rename/drop columns — safe against concurrent gunicorn workers."""
+
+    def col_exists(name: str) -> bool:
+        cursor.execute("SHOW COLUMNS FROM users LIKE %s", (name,))
+        return cursor.fetchone() is not None
+
+    def safe_exec(sql: str) -> None:
+        try:
             cursor.execute(sql)
+        except Exception as exc:
+            logger.warning("Migration skipped (already done): %s", exc)
 
-    # Rename old first_name → tg_first_name if needed (copy data)
-    cursor.execute("SHOW COLUMNS FROM users LIKE 'first_name'")
-    if cursor.fetchone() is not None:
-        cursor.execute(
-            "UPDATE users SET tg_first_name = first_name "
-            "WHERE tg_first_name IS NULL AND first_name IS NOT NULL"
-        )
-        cursor.execute("ALTER TABLE users DROP COLUMN `first_name`")
+    # ADD missing columns
+    if not col_exists("tg_first_name"):
+        safe_exec("ALTER TABLE users ADD COLUMN tg_first_name VARCHAR(255) NULL AFTER chat_id")
+    if not col_exists("tg_username"):
+        safe_exec("ALTER TABLE users ADD COLUMN tg_username VARCHAR(255) NULL AFTER tg_first_name")
+    if not col_exists("name"):
+        safe_exec("ALTER TABLE users ADD COLUMN name VARCHAR(255) NULL AFTER tg_username")
+    if not col_exists("phone"):
+        safe_exec("ALTER TABLE users ADD COLUMN phone VARCHAR(20) NULL AFTER name")
+    if not col_exists("state"):
+        safe_exec("ALTER TABLE users ADD COLUMN state VARCHAR(20) NOT NULL DEFAULT 'START' AFTER phone")
 
-    # Rename old username → tg_username if needed (copy data)
-    cursor.execute("SHOW COLUMNS FROM users LIKE 'username'")
-    if cursor.fetchone() is not None:
-        cursor.execute(
-            "UPDATE users SET tg_username = username "
-            "WHERE tg_username IS NULL AND username IS NOT NULL"
-        )
-        cursor.execute("ALTER TABLE users DROP COLUMN `username`")
+    # Rename first_name → tg_first_name (copy data then drop)
+    if col_exists("first_name"):
+        safe_exec("UPDATE users SET tg_first_name = first_name WHERE tg_first_name IS NULL AND first_name IS NOT NULL")
+        safe_exec("ALTER TABLE users DROP COLUMN `first_name`")
+
+    # Rename username → tg_username (copy data then drop)
+    if col_exists("username"):
+        safe_exec("UPDATE users SET tg_username = username WHERE tg_username IS NULL AND username IS NOT NULL")
+        safe_exec("ALTER TABLE users DROP COLUMN `username`")
 
     # Drop other obsolete columns
-    drop_cols = [
-        "gender", "province", "crop_interest", "full_name",
-        "onboarding_completed", "onboarding_step",
-    ]
-    for col in drop_cols:
-        cursor.execute("SHOW COLUMNS FROM users LIKE %s", (col,))
-        if cursor.fetchone() is not None:
-            cursor.execute(f"ALTER TABLE users DROP COLUMN `{col}`")
+    for col in ["gender", "province", "crop_interest", "full_name", "onboarding_completed", "onboarding_step"]:
+        if col_exists(col):
+            safe_exec(f"ALTER TABLE users DROP COLUMN `{col}`")
 
 
 def ensure_database_ready() -> bool:
