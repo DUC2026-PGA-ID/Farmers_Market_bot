@@ -705,6 +705,7 @@ def setup_webhook_route():
 
 
 @app.route("/health")
+@app.route("/healthz")
 def health():
     return jsonify({"status": "ok", "bot": "Agri-Trade Bot"})
 
