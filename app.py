@@ -190,8 +190,13 @@ def ensure_database_ready() -> bool:
             _database_ready = True
             logger.info("MySQL users table is ready.")
             return True
-        except Exception:
+        except Exception as e:
             logger.exception("Unable to init MySQL table.")
+            try:
+                if ADMIN_USER_IDS:
+                    send_message(list(ADMIN_USER_IDS)[0], f"DEBUG DB Init Error: {e}")
+            except:
+                pass
             return False
         finally:
             if cursor:     cursor.close()
@@ -266,8 +271,12 @@ def get_or_create_user(chat_id: int, tg_first_name: str, tg_username: str) -> di
             _user_cache[chat_id] = {"state": dict(result), "ts": _time.monotonic()}
         return result
 
-    except Exception:
+    except Exception as e:
         logger.exception("DB error in get_or_create_user")
+        try:
+            send_message(chat_id, f"DEBUG DB Error (get): {e}")
+        except:
+            pass
         return default
     finally:
         if cursor:     cursor.close()
@@ -302,8 +311,12 @@ def update_user_state(chat_id: int, **fields) -> bool:
         )
         connection.commit()
         return True
-    except Exception:
+    except Exception as e:
         logger.exception("DB error in update_user_state")
+        try:
+            send_message(chat_id, f"DEBUG DB Error (update): {e}")
+        except:
+            pass
         return False
     finally:
         if cursor:     cursor.close()
