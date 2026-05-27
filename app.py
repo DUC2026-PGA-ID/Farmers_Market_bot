@@ -108,12 +108,21 @@ def _mysql_is_configured() -> bool:
     return bool(DB_HOST and DB_USER and DB_PASSWORD and DB_NAME)
 
 
+_db_pool = None
+
 def _get_db_connection():
-    return mysql.connector.connect(
-        host=DB_HOST, port=DB_PORT,
-        user=DB_USER, password=DB_PASSWORD,
-        database=DB_NAME, connection_timeout=10,
-    )
+    global _db_pool
+    if _db_pool is None:
+        from mysql.connector.pooling import MySQLConnectionPool
+        _db_pool = MySQLConnectionPool(
+            pool_name="bot_pool",
+            pool_size=5,
+            pool_reset_session=True,
+            host=DB_HOST, port=DB_PORT,
+            user=DB_USER, password=DB_PASSWORD,
+            database=DB_NAME, connection_timeout=10,
+        )
+    return _db_pool.get_connection()
 
 
 def _ensure_columns(cursor) -> None:
@@ -707,25 +716,28 @@ def handle_text_message(message: dict) -> None:
 #  FLASK ROUTES
 # ═══════════════════════════════════════════════════════════════
 
-@app.route("/telegram-webhook", methods=["POST"])
-def telegram_webhook():
-    if TELEGRAM_SECRET_TOKEN:
-        if request.headers.get("X-Telegram-Bot-Api-Secret-Token", "") != TELEGRAM_SECRET_TOKEN:
-            abort(403)
-
+def _process_update_async(update: dict) -> None:
     configure_bot_commands()
-
-    try:
-        update = request.get_json(force=True, silent=True) or {}
-    except Exception:
-        return jsonify({"ok": True})
-
     message = update.get("message") or update.get("edited_message")
     if message:
         try:
             handle_text_message(message)
         except Exception:
             logger.exception("Error handling message")
+
+@app.route("/telegram-webhook", methods=["POST"])
+def telegram_webhook():
+    if TELEGRAM_SECRET_TOKEN:
+        if request.headers.get("X-Telegram-Bot-Api-Secret-Token", "") != TELEGRAM_SECRET_TOKEN:
+            abort(403)
+
+    try:
+        update = request.get_json(force=True, silent=True) or {}
+        if update:
+            import threading
+            threading.Thread(target=_process_update_async, args=(update,)).start()
+    except Exception:
+        pass
 
     return jsonify({"ok": True})
 
