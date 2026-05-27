@@ -292,7 +292,7 @@ def get_or_create_user(chat_id: int, tg_first_name: str, tg_username: str) -> di
 
 
 def update_user_state(chat_id: int, **fields) -> bool:
-    """Write allowed fields to DB and clear cache."""
+    """Write allowed fields to DB (UPSERT) and clear cache."""
     allowed = {"name", "phone", "state", "tg_first_name", "tg_username"}
     sanitized = {k: v for k, v in fields.items() if k in allowed}
     if not sanitized or not ensure_database_ready():
@@ -305,11 +305,20 @@ def update_user_state(chat_id: int, **fields) -> bool:
     try:
         connection = _get_db_connection()
         cursor = connection.cursor()
-        assignments = ", ".join(f"{k} = %s" for k in sanitized)
-        values = list(sanitized.values()) + [chat_id]
-        cursor.execute(f"UPDATE users SET {assignments} WHERE chat_id = %s", values)
+        cols   = list(sanitized.keys())
+        vals   = list(sanitized.values())
+        # UPSERT: create row if missing, otherwise update in place
+        col_str  = ", ".join(cols)
+        ph_str   = ", ".join(["%s"] * len(cols))
+        upd_str  = ", ".join(f"`{k}` = VALUES(`{k}`)" for k in cols)
+        cursor.execute(
+            f"INSERT INTO users (chat_id, {col_str}) "
+            f"VALUES (%s, {ph_str}) "
+            f"ON DUPLICATE KEY UPDATE {upd_str}",
+            [chat_id] + vals,
+        )
         connection.commit()
-        return cursor.rowcount > 0
+        return True
     except Exception:
         logger.exception("DB error in update_user_state")
         return False
