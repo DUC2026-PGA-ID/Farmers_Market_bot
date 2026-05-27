@@ -66,8 +66,6 @@ TELEGRAM_SECRET_TOKEN = (
 # ── Bot commands ────────────────────────────────────────────────
 GLOBAL_BOT_COMMANDS = [
     telebot.types.BotCommand("start",  "ចុះឈ្មោះ / ចាប់ផ្តើម"),
-    telebot.types.BotCommand("status", "ពិនិត្យស្ថានភាព"),
-    telebot.types.BotCommand("help",   "បញ្ជីពាក្យបញ្ជា"),
 ]
 ADMIN_BOT_COMMANDS = GLOBAL_BOT_COMMANDS + [
     telebot.types.BotCommand("users",       "ស្ថិតិអ្នកប្រើ"),
@@ -76,10 +74,8 @@ ADMIN_BOT_COMMANDS = GLOBAL_BOT_COMMANDS + [
 
 UNKNOWN_COMMAND_TEXT = (
     "🤖 <b>មិនទាន់ស្គាល់ពាក្យបញ្ជានេះទេ</b>\n"
-    "សូមសាកមួយក្នុងចំណោម:\n"
-    "• <code>/start</code>\n"
-    "• <code>/status</code>\n"
-    "• <code>/help</code>"
+    "សូមសាក:\n"
+    "• <code>/start</code>"
 )
 
 # ── Flask + Bot ─────────────────────────────────────────────────
@@ -474,8 +470,7 @@ def handle_start(chat_id: int, user_state: dict) -> None:
             "<code>━━━━━━━━━━━━━━━━</code>\n"
             f"👤 <b>ឈ្មោះ:</b> {name}\n"
             f"📱 <b>ទូរស័ព្ទ:</b> {phone}\n"
-            "<code>━━━━━━━━━━━━━━━━</code>\n"
-            "💡 ប្រើ <code>/status</code> ដើម្បីពិនិត្យ។",
+            "<code>━━━━━━━━━━━━━━━━</code>\n",
             reply_markup=telebot.types.ReplyKeyboardRemove(),
         )
         return
@@ -548,44 +543,7 @@ def handle_wait_phone(chat_id: int, text: str, user_state: dict) -> None:
     )
 
 
-def handle_status(chat_id: int, user_state: dict) -> None:
-    state = user_state.get("state", STATE_START)
-    labels = {
-        STATE_START:      "🔵 START — មិនទាន់ចាប់ផ្តើម",
-        STATE_WAIT_NAME:  "🟡 WAIT_NAME — រង់ចាំឈ្មោះ",
-        STATE_WAIT_PHONE: "🟠 WAIT_PHONE — រង់ចាំទូរស័ព្ទ",
-        STATE_IDLE:       "🟢 IDLE — ចុះឈ្មោះរួចហើយ ✅",
-    }
-    send_bot_message(
-        chat_id,
-        "📊 <b>ស្ថានភាពការចុះឈ្មោះ</b>\n"
-        "<code>━━━━━━━━━━━━━━━━</code>\n"
-        f"⚙️ <b>State:</b> {labels.get(state, state)}\n"
-        f"👤 <b>ឈ្មោះ:</b> {escape(user_state.get('name') or '—')}\n"
-        f"📱 <b>ទូរស័ព្ទ:</b> {escape(user_state.get('phone') or '—')}\n"
-        f"📅 <b>ចូលប្រើ:</b> {_format_datetime(user_state.get('joined_date'))}\n"
-        "<code>━━━━━━━━━━━━━━━━</code>\n"
-        + ("✅ ចុះឈ្មោះរួចហើយ!" if state == STATE_IDLE else
-           "💡 ប្រើ <code>/start</code> ដើម្បីបន្ត។"),
-    )
 
-
-def handle_help(chat_id: int, is_admin: bool = False) -> None:
-    lines = [
-        "📌 <b>បញ្ជីពាក្យបញ្ជា</b>",
-        "━━━━━━━━━━━━",
-        "• <code>/start</code>  — ចុះឈ្មោះ / ចាប់ផ្តើម",
-        "• <code>/status</code> — ពិនិត្យស្ថានភាព",
-        "• <code>/help</code>   — បញ្ជីពាក្យបញ្ជា",
-    ]
-    if is_admin:
-        lines += [
-            "",
-            "🛡️ <b>Admin Commands</b>",
-            "• <code>/users</code>       — ស្ថិតិអ្នកប្រើ",
-            "• <code>/recentusers</code> — អ្នកប្រើថ្មីៗ",
-        ]
-    send_bot_message(chat_id, "\n".join(lines))
 
 
 def send_admin_stats(chat_id: int) -> None:
@@ -663,13 +621,7 @@ def handle_text_message(message: dict) -> None:
         handle_start(chat_id, user_state)
         return
 
-    if command == "/status":
-        handle_status(chat_id, user_state)
-        return
 
-    if command == "/help":
-        handle_help(chat_id, is_admin=is_admin)
-        return
 
     if command == "/users" and is_admin:
         send_admin_stats(chat_id)
@@ -702,7 +654,6 @@ def handle_text_message(message: dict) -> None:
         send_bot_message(
             chat_id,
             "✅ <b>អ្នកបានចុះឈ្មោះហើយ!</b>\n"
-            "💡 ប្រើ <code>/status</code> ដើម្បីមើលព័ត៌មាន។",
         )
 
     else:  # STATE_START or unknown
