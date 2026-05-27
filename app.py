@@ -121,7 +121,7 @@ def _ensure_columns(cursor) -> None:
 
     def col_exists(name: str) -> bool:
         cursor.execute("SHOW COLUMNS FROM users LIKE %s", (name,))
-        return cursor.fetchone() is not None
+        return len(cursor.fetchall()) > 0
 
     def safe_exec(sql: str) -> None:
         try:
@@ -229,7 +229,8 @@ def get_or_create_user(chat_id: int, tg_first_name: str, tg_username: str) -> di
             "FROM users WHERE chat_id = %s",
             (chat_id,),
         )
-        row = cursor.fetchone()
+        rows = cursor.fetchall()
+        row = rows[0] if rows else None
 
         if row is None:
             cursor.execute(
@@ -292,12 +293,12 @@ def update_user_state(chat_id: int, **fields) -> bool:
         # UPSERT: create row if missing, otherwise update in place
         col_str  = ", ".join(cols)
         ph_str   = ", ".join(["%s"] * len(cols))
-        upd_str  = ", ".join(f"`{k}` = VALUES(`{k}`)" for k in cols)
+        upd_str  = ", ".join(f"`{k}` = %s" for k in cols)
         cursor.execute(
             f"INSERT INTO users (chat_id, {col_str}) "
             f"VALUES (%s, {ph_str}) "
             f"ON DUPLICATE KEY UPDATE {upd_str}",
-            [chat_id] + vals,
+            [chat_id] + vals + vals,
         )
         connection.commit()
         return True
@@ -324,7 +325,8 @@ def get_user_stats() -> dict:
                 SUM(state = 'IDLE') AS completed
             FROM users
         """)
-        row = cursor.fetchone() or {}
+        rows = cursor.fetchall()
+        row = rows[0] if rows else {}
         return {
             "total":     int(row.get("total") or 0),
             "today":     int(row.get("today") or 0),
