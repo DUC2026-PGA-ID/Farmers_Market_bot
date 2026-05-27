@@ -120,6 +120,10 @@ def _ensure_columns(cursor) -> None:
     """Add new columns & drop obsolete ones safely."""
     # Columns to ADD if missing
     add_cols = {
+        "tg_first_name": (
+            "ALTER TABLE users ADD COLUMN tg_first_name VARCHAR(255) NULL "
+            "AFTER chat_id"
+        ),
         "tg_username": (
             "ALTER TABLE users ADD COLUMN tg_username VARCHAR(255) NULL "
             "AFTER tg_first_name"
@@ -142,11 +146,28 @@ def _ensure_columns(cursor) -> None:
         if cursor.fetchone() is None:
             cursor.execute(sql)
 
-    # Columns to DROP if still present (legacy)
+    # Rename old first_name → tg_first_name if needed (copy data)
+    cursor.execute("SHOW COLUMNS FROM users LIKE 'first_name'")
+    if cursor.fetchone() is not None:
+        cursor.execute(
+            "UPDATE users SET tg_first_name = first_name "
+            "WHERE tg_first_name IS NULL AND first_name IS NOT NULL"
+        )
+        cursor.execute("ALTER TABLE users DROP COLUMN `first_name`")
+
+    # Rename old username → tg_username if needed (copy data)
+    cursor.execute("SHOW COLUMNS FROM users LIKE 'username'")
+    if cursor.fetchone() is not None:
+        cursor.execute(
+            "UPDATE users SET tg_username = username "
+            "WHERE tg_username IS NULL AND username IS NOT NULL"
+        )
+        cursor.execute("ALTER TABLE users DROP COLUMN `username`")
+
+    # Drop other obsolete columns
     drop_cols = [
         "gender", "province", "crop_interest", "full_name",
         "onboarding_completed", "onboarding_step",
-        "first_name", "username",
     ]
     for col in drop_cols:
         cursor.execute("SHOW COLUMNS FROM users LIKE %s", (col,))
