@@ -461,6 +461,7 @@ def handle_start(chat_id: int, user_state: dict) -> None:
             f"📱 <b>ទូរស័ព្ទ:</b> {phone}\n"
             "<code>━━━━━━━━━━━━━━━━</code>\n"
             "💡 ប្រើ <code>/status</code> ដើម្បីពិនិត្យ។",
+            reply_markup=telebot.types.ReplyKeyboardRemove(),
         )
         return
 
@@ -474,6 +475,7 @@ def handle_start(chat_id: int, user_state: dict) -> None:
         "✏️ <b>ជំហានទី 1/2 — ឈ្មោះ</b>\n"
         "សូមវាយ <b>ឈ្មោះពេញ</b> របស់អ្នក:\n"
         "<i>(ឧ: សេង កុមារ)</i>",
+        reply_markup=telebot.types.ReplyKeyboardRemove(),
     )
 
 
