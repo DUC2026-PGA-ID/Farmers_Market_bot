@@ -432,7 +432,13 @@ def configure_bot_commands() -> None:
         if _commands_configured:
             return
         try:
-            bot.set_my_commands(GLOBAL_BOT_COMMANDS)
+            bot.delete_my_commands(scope=telebot.types.BotCommandScopeDefault())
+            bot.set_my_commands(GLOBAL_BOT_COMMANDS, scope=telebot.types.BotCommandScopeDefault())
+            for aid in ADMIN_USER_IDS:
+                try:
+                    bot.set_my_commands(ADMIN_BOT_COMMANDS, scope=telebot.types.BotCommandScopeChat(aid))
+                except Exception:
+                    pass
             _commands_configured = True
         except Exception:
             logger.exception("Failed to set bot commands")
