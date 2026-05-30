@@ -66,6 +66,7 @@ TELEGRAM_SECRET_TOKEN = (
 # ── Bot commands ────────────────────────────────────────────────
 GLOBAL_BOT_COMMANDS = [
     telebot.types.BotCommand("start",  "ចុះឈ្មោះ / ចាប់ផ្តើម"),
+    telebot.types.BotCommand("view_catalog", "មើលកាតាឡុក / View Catalog"),
 ]
 ADMIN_BOT_COMMANDS = GLOBAL_BOT_COMMANDS + [
     telebot.types.BotCommand("users",       "ស្ថិតិអ្នកប្រើ"),
@@ -380,6 +381,23 @@ def get_recent_users(limit: int = 20) -> list:
         if connection: connection.close()
 
 
+def get_all_crops() -> list:
+    if not ensure_database_ready():
+        return []
+    connection = cursor = None
+    try:
+        connection = _get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT crop_id, crop_name, category, unit FROM crops ORDER BY crop_name")
+        return cursor.fetchall()
+    except Exception:
+        logger.exception("DB error in get_all_crops")
+        return []
+    finally:
+        if cursor:     cursor.close()
+        if connection: connection.close()
+
+
 # ═══════════════════════════════════════════════════════════════
 #  TELEGRAM HELPERS
 # ═══════════════════════════════════════════════════════════════
@@ -543,6 +561,27 @@ def handle_wait_phone(chat_id: int, text: str, user_state: dict) -> None:
     )
 
 
+def handle_view_catalog(chat_id: int) -> None:
+    crops = get_all_crops()
+    if not crops:
+        send_bot_message(chat_id, "📦 <b>មិនមានកសិផលក្នុងកាតាឡុកទេ / No products in catalog yet.</b>")
+        return
+
+    markup = telebot.types.InlineKeyboardMarkup(row_width=2)
+    buttons = []
+    for crop in crops:
+        btn_text = f"{crop['crop_name']} - {crop['unit']}"
+        callback_data = f"crop_{crop['crop_id']}" 
+        buttons.append(telebot.types.InlineKeyboardButton(btn_text, callback_data=callback_data))
+    
+    markup.add(*buttons)
+    send_bot_message(
+        chat_id,
+        "📦 <b>កាតាឡុកកសិផល / Product Catalog:</b>\nសូមជ្រើសរើសផលិតផលខាងក្រោម:",
+        reply_markup=markup
+    )
+
+
 
 
 
@@ -619,6 +658,10 @@ def handle_text_message(message: dict) -> None:
     # ── Command routing ─────────────────────────────────────────
     if command == "/start":
         handle_start(chat_id, user_state)
+        return
+
+    if command == "/view_catalog":
+        handle_view_catalog(chat_id)
         return
 
 
