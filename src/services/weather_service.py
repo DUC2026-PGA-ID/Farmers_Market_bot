@@ -8,9 +8,13 @@
 # ─────────────────────────────────────────────────────────────
 import json
 import logging
+import ssl
 import urllib.request
 
 logger = logging.getLogger(__name__)
+
+# ── SSL Context — fixes certificate issues on Windows/Render ─
+_SSL_CTX = ssl.create_default_context()
 
 # ── Open-Meteo API — 100% free, no API key required ─────────
 # Coordinates: Phnom Penh, Cambodia
@@ -71,7 +75,7 @@ def fetch_weather() -> dict:
             _WEATHER_URL,
             headers={"User-Agent": "AgriTradeBot/1.0"},
         )
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.urlopen(req, timeout=10, context=_SSL_CTX) as response:
             raw = json.loads(response.read().decode("utf-8"))
 
         cw = raw["current_weather"]
