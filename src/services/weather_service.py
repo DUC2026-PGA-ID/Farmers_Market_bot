@@ -73,6 +73,7 @@ def fetch_weather() -> dict:
             params=_WEATHER_PARAMS,
             timeout=10,
             headers={"User-Agent": "AgriTradeBot/1.0"},
+            verify=False,   # bypass SSL cert issues on some servers
         )
         resp.raise_for_status()
         raw = resp.json()
@@ -103,6 +104,13 @@ def fetch_weather() -> dict:
             "សូមព្យាយាមម្ដងទៀតក្រោយ / Please try again later."
         ) from exc
 
+    except requests.exceptions.HTTPError as exc:
+        logger.exception("weather_service: HTTP error %s", exc.response.status_code if exc.response else "?")
+        raise ConnectionError(
+            "⚠️ <b>API បញ្ជូនកំហុស / Weather API returned an error.</b>\n"
+            "សូមព្យាយាមម្ដងទៀតក្រោយ / Please try again later."
+        ) from exc
+
     except (KeyError, ValueError, requests.exceptions.JSONDecodeError) as exc:
         logger.exception("weather_service: Unexpected API response format")
         raise ValueError(
@@ -111,7 +119,7 @@ def fetch_weather() -> dict:
         ) from exc
 
     except requests.exceptions.RequestException as exc:
-        logger.exception("weather_service: Unexpected requests error")
+        logger.exception("weather_service: Unexpected requests error: %s", type(exc).__name__)
         raise ConnectionError(
             "⚠️ <b>មានបញ្ហាក្នុងការភ្ជាប់ / Network error.</b>\n"
             "សូមព្យាយាមម្ដងទៀតក្រោយ / Please try again later."
