@@ -197,16 +197,17 @@ def handle_weather(chat_id: int) -> None:
     _send_bot_message(chat_id, "🌐 <b>កំពុងទាញទិន្នន័យ… / Fetching live weather…</b>")
     try:
         w = fetch_weather()
-        time_label = "🌞 昼間" if w["is_day"] else "🌙 夜間"
         _send_bot_message(
             chat_id,
             "🌤️ <b>អាកាសធាតុបច្ចុប្បន្ន — ភ្នំពេញ / Live Weather — Phnom Penh</b>\n"
             "<code>━━━━━━━━━━━━━━━━━━━━━━</code>\n"
             f"{w['icon']} <b>លក្ខខណ្ឌ:</b> {w['condition']}\n"
             f"🌡️ <b>សីតុណ្ហភាព:</b> {w['temperature']} °C\n"
+            f"🤔 <b>អារម្មណ៍ដូច:</b> {w['feels_like']} °C\n"
+            f"💧 <b>សំណើម:</b> {w['humidity']} %\n"
             f"💨 <b>ល្បឿនខ្យល់:</b> {w['windspeed']} km/h\n"
             "<code>━━━━━━━━━━━━━━━━━━━━━━</code>\n"
-            "<i>ប្រភព: Open-Meteo API (Real-time)</i>",
+            "<i>ប្រភព: wttr.in (Real-time)</i>",
         )
     except (ConnectionError, ValueError) as exc:
         # Graceful error — bot notifies user, server keeps running
