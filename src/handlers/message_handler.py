@@ -128,7 +128,8 @@ def handle_wait_phone(chat_id: int, text: str, user_state: dict) -> None:
     WAIT_PHONE --> WAIT_PHONE : regex fail ❌
     """
     phone = text.strip()
-    if not _phone_regex.match(phone):
+    # Guard: if regex not yet initialised, fail safely
+    if _phone_regex is None or not _phone_regex.match(phone):
         _send_bot_message(
             chat_id,
             "❌ <b>លេខទូរស័ព្ទមិនត្រឹមត្រូវ!</b>\n"
@@ -159,29 +160,36 @@ def handle_view_catalog(chat_id: int) -> None:
     Delegates to catalog_service (src/services layer).
     Renders live DB rows as an InlineKeyboard menu.
     """
-    crops = get_all_crops(_get_db_connection, _ensure_db_ready)
-    if not crops:
+    try:
+        crops = get_all_crops(_get_db_connection, _ensure_db_ready)
+        if not crops:
+            _send_bot_message(
+                chat_id,
+                "📦 <b>មិនមានកសិផលក្នុងកាតាឡុកទេ / No products in catalog yet.</b>"
+            )
+            return
+
+        markup = telebot.types.InlineKeyboardMarkup(row_width=2)
+        buttons = [
+            telebot.types.InlineKeyboardButton(
+                f"{c['crop_name']} — {c['unit']}",
+                callback_data=f"crop_{c['crop_id']}"
+            )
+            for c in crops
+        ]
+        markup.add(*buttons)
         _send_bot_message(
             chat_id,
-            "📦 <b>មិនមានកសិផលក្នុងកាតាឡុកទេ / No products in catalog yet.</b>"
+            "📦 <b>កាតាឡុកកសិផល / Product Catalog:</b>\n"
+            "សូមជ្រើសរើសផលិតផលខាងក្រោម:",
+            reply_markup=markup,
         )
-        return
-
-    markup = telebot.types.InlineKeyboardMarkup(row_width=2)
-    buttons = [
-        telebot.types.InlineKeyboardButton(
-            f"{c['crop_name']} — {c['unit']}",
-            callback_data=f"crop_{c['crop_id']}"
+    except Exception:
+        logger.exception("handle_view_catalog: unexpected error")
+        _send_bot_message(
+            chat_id,
+            "⚠️ <b>មានបញ្ហាទាញយកផលិតផល / Could not load catalog. Please try again.</b>"
         )
-        for c in crops
-    ]
-    markup.add(*buttons)
-    _send_bot_message(
-        chat_id,
-        "📦 <b>កាតាឡុកកសិផល / Product Catalog:</b>\n"
-        "សូមជ្រើសរើសផលិតផលខាងក្រោម:",
-        reply_markup=markup,
-    )
 
 
 def handle_weather(chat_id: int) -> None:
@@ -221,49 +229,57 @@ def handle_weather(chat_id: int) -> None:
 
 
 def send_admin_stats(chat_id: int, get_user_stats_fn) -> None:
-    s = get_user_stats_fn()
-    _send_bot_message(
-        chat_id,
-        "👥 <b>ស្ថិតិអ្នកប្រើ</b>\n"
-        "<code>━━━━━━━━━━━━━━━━</code>\n"
-        f"📊 <b>អ្នកប្រើសរុប:</b> {s['total']}\n"
-        f"🆕 <b>ចូលថ្ងៃនេះ:</b> {s['today']}\n"
-        f"✅ <b>ចុះឈ្មោះហើយ (IDLE):</b> {s['completed']}\n"
-        f"🛡️ <b>Admin:</b> {s['admins']}\n",
-    )
+    try:
+        s = get_user_stats_fn()
+        _send_bot_message(
+            chat_id,
+            "👥 <b>ស្ថិតិអ្នកប្រើ</b>\n"
+            "<code>━━━━━━━━━━━━━━━━</code>\n"
+            f"📊 <b>អ្នកប្រើសរុប:</b> {s['total']}\n"
+            f"🆕 <b>ចូលថ្ងៃនេះ:</b> {s['today']}\n"
+            f"✅ <b>ចុះឈ្មោះហើយ (IDLE):</b> {s['completed']}\n"
+            f"🛡️ <b>Admin:</b> {s['admins']}\n",
+        )
+    except Exception:
+        logger.exception("send_admin_stats: unexpected error")
+        _send_bot_message(chat_id, "⚠️ <b>មានបញ្ហាទាញស្ថិតិ / Could not load stats.</b>")
 
 
 def send_recent_users_msg(chat_id: int, get_recent_users_fn,
                           format_datetime_fn) -> None:
-    users = get_recent_users_fn(10)
-    if not users:
-        _send_bot_message(chat_id, "📬 <b>មិនទាន់មានអ្នកប្រើទេ។</b>")
-        return
+    try:
+        users = get_recent_users_fn(10)
+        if not users:
+            _send_bot_message(chat_id, "📬 <b>មិនទាន់មានអ្នកប្រើទេ។</b>")
+            return
 
-    state_icon = {
-        STATE_START:      "🔵",
-        STATE_WAIT_NAME:  "🟡",
-        STATE_WAIT_PHONE: "🟠",
-        STATE_IDLE:       "🟢",
-    }
-    lines = ["📋 <b>អ្នកប្រើថ្មីៗ</b>",
-             "<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"]
+        state_icon = {
+            STATE_START:      "🔵",
+            STATE_WAIT_NAME:  "🟡",
+            STATE_WAIT_PHONE: "🟠",
+            STATE_IDLE:       "🟢",
+        }
+        lines = ["📋 <b>អ្នកប្រើថ្មីៗ</b>",
+                 "<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"]
 
-    for i, u in enumerate(users, 1):
-        st   = u.get("state") or STATE_START
-        icon = state_icon.get(st, "⚪")
-        un   = u.get("tg_username")
-        un_t = f"@{escape(un)}" if un else "<i>គ្មាន</i>"
-        admin_badge = " 🛡️ <b>[ADMIN]</b>" if u["chat_id"] in _admin_ids else ""
-        lines.append(
-            f"{icon} <b>#{i} {escape(u.get('tg_first_name') or '—')}</b>{admin_badge}\n"
-            f"• 🆔 <code>{u['chat_id']}</code>  🏷️ {un_t}\n"
-            f"• 👤 {escape(u.get('name') or '—')}  "
-            f"📱 {escape(u.get('phone') or '—')}\n"
-            f"• 📅 {format_datetime_fn(u.get('joined_date'))}\n"
-        )
-    lines.append("<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>")
-    _send_bot_message(chat_id, "\n".join(lines))
+        for i, u in enumerate(users, 1):
+            st   = u.get("state") or STATE_START
+            icon = state_icon.get(st, "⚪")
+            un   = u.get("tg_username")
+            un_t = f"@{escape(un)}" if un else "<i>គ្មាន</i>"
+            admin_badge = " 🛡️ <b>[ADMIN]</b>" if u.get("chat_id") in _admin_ids else ""
+            lines.append(
+                f"{icon} <b>#{i} {escape(u.get('tg_first_name') or '—')}</b>{admin_badge}\n"
+                f"• 🆔 <code>{u.get('chat_id', '?')}</code>  🏷️ {un_t}\n"
+                f"• 👤 {escape(u.get('name') or '—')}  "
+                f"📱 {escape(u.get('phone') or '—')}\n"
+                f"• 📅 {format_datetime_fn(u.get('joined_date'))}\n"
+            )
+        lines.append("<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>")
+        _send_bot_message(chat_id, "\n".join(lines))
+    except Exception:
+        logger.exception("send_recent_users_msg: unexpected error")
+        _send_bot_message(chat_id, "⚠️ <b>មានបញ្ហាទាញទិន្នន័យ / Could not load users.</b>")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -283,6 +299,18 @@ def handle_text_message(message: dict,
                         get_user_stats_fn,
                         get_recent_users_fn,
                         format_datetime_fn) -> None:
+    # ── Top-level safety guard — nothing here can crash the server ──
+    try:
+        _route_message(message, get_user_stats_fn, get_recent_users_fn, format_datetime_fn)
+    except Exception:
+        logger.exception("handle_text_message: unhandled top-level exception")
+
+
+def _route_message(message: dict,
+                   get_user_stats_fn,
+                   get_recent_users_fn,
+                   format_datetime_fn) -> None:
+    """Inner routing logic — called by handle_text_message inside a try/except."""
     user     = message.get("from") or {}
     chat     = message.get("chat") or {}
     chat_id  = chat.get("id")
@@ -294,7 +322,7 @@ def handle_text_message(message: dict,
     tg_username   = user.get("username")   or ""
     is_admin      = user.get("id") in _admin_ids
 
-    user_state = _get_or_create_user(chat_id, tg_first_name, tg_username)
+    user_state = _get_or_create_user(chat_id, tg_first_name, tg_username) or {}
     user_state["is_admin"] = is_admin
     state = user_state.get("state", STATE_START)
 
