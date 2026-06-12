@@ -475,6 +475,14 @@ def _process_update_async(update: dict) -> None:
         except Exception:
             logger.exception("Error handling message")
 
+    callback_query = update.get("callback_query")
+    if callback_query:
+        try:
+            from src.handlers.message_handler import handle_callback_query
+            handle_callback_query(callback_query)
+        except Exception:
+            logger.exception("Error handling callback query")
+
 
 @app.route("/telegram-webhook", methods=["POST"])
 def telegram_webhook():

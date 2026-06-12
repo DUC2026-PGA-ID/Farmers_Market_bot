@@ -7,10 +7,11 @@
 # ─────────────────────────────────────────────────────────────
 import logging
 from html import escape
-
+import re
+import os
 import telebot
 
-from src.services.catalog_service import get_all_crops
+from src.services.catalog_service import get_all_crops, get_crop_by_id
 from src.services.weather_service import fetch_weather
 from src.services.price_service import (
     get_today_prices,
@@ -743,6 +744,15 @@ def _route_message(message: dict,
 
     elif state == STATE_WAIT_PHONE:
         handle_wait_phone(chat_id, text, user_state)
+
+    if _user["state"] != STATE_START:
+        _send_bot_message(
+            chat_id,
+            "⚠️ <b>លោកអ្នកកំពុងស្ថិតក្នុងដំណើរការផ្សេង!</b>\n"
+            "សូមបំពេញដំណើរការនោះឱ្យចប់សិន។"
+        )
+        return
+
 
     elif state == STATE_IDLE:
         _send_bot_message(

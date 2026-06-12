@@ -39,3 +39,28 @@ def get_all_crops(get_db_connection, ensure_database_ready) -> list:
             cursor.close()
         if connection:
             connection.close()
+
+
+def get_crop_by_id(crop_id: int, get_db_connection, ensure_database_ready) -> dict:
+    """Fetch details of a specific crop by ID."""
+    if not ensure_database_ready():
+        return None
+    connection = cursor = None
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT crop_id, crop_name, category, unit, description, quality_standards "
+            "FROM crops WHERE crop_id = %s",
+            (crop_id,)
+        )
+        rows = cursor.fetchall()
+        return rows[0] if rows else None
+    except Exception:
+        logger.exception("catalog_service: DB error in get_crop_by_id")
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
