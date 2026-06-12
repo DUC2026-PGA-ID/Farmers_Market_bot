@@ -384,20 +384,7 @@ def send_recent_users_msg(chat_id: int, get_recent_users_fn,
         _send_bot_message(chat_id, "⚠️ <b>មានបញ្ហាទាញទិន្នន័យ / Could not load users.</b>")
 
 
-def handle_weather(chat_id: int) -> None:
-    """
-    REQ-S06: Weather Command
-    """
-    try:
-        report = fetch_weather()
-        if not report:
-            _send_bot_message(chat_id, "⚠️ <b>សូមអភ័យទោស!</b>\nប្រព័ន្ធអាកាសធាតុមានបញ្ហា។")
-            return
-            
-        _send_bot_message(chat_id, report)
-    except Exception:
-        logger.exception("message_handler: Error in handle_weather")
-        _send_bot_message(chat_id, "⚠️ មានបញ្ហាក្នុងការទាញយកទិន្នន័យអាកាសធាតុ។")
+
 
 
 def handle_buyers(chat_id: int) -> None:
