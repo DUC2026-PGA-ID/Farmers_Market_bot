@@ -774,13 +774,19 @@ def handle_callback_query(callback_query: dict) -> None:
             crop_id = int(data.split("_")[1])
             crop = get_crop_by_id(crop_id, _get_db_connection, _ensure_db_ready)
             if crop:
+                c_name = escape(str(crop.get('crop_name') or 'មិនមាន'))
+                c_cat  = escape(str(crop.get('category') or 'មិនមាន'))
+                c_unit = escape(str(crop.get('unit') or 'មិនមាន'))
+                c_desc = escape(str(crop.get('description') or 'មិនមាន'))
+                c_qual = escape(str(crop.get('quality_standards') or 'មិនមាន'))
+                
                 msg = (
-                    f"📦 <b>ព័ត៌មានលម្អិត: {escape(crop['crop_name'])}</b>\n"
+                    f"📦 <b>ព័ត៌មានលម្អិត: {c_name}</b>\n"
                     "<code>━━━━━━━━━━━━━━━━━━━━━━</code>\n"
-                    f"📋 <b>ប្រភេទ:</b> {escape(crop['category'])}\n"
-                    f"⚖️ <b>ឯកតា:</b> {escape(crop['unit'])}\n\n"
-                    f"📝 <b>ការពិពណ៌នា:</b>\n{escape(crop['description'] or 'មិនមាន')}\n\n"
-                    f"⭐ <b>ស្តង់ដារគុណភាព:</b>\n{escape(crop['quality_standards'] or 'មិនមាន')}"
+                    f"📋 <b>ប្រភេទ:</b> {c_cat}\n"
+                    f"⚖️ <b>ឯកតា:</b> {c_unit}\n\n"
+                    f"📝 <b>ការពិពណ៌នា:</b>\n{c_desc}\n\n"
+                    f"⭐ <b>ស្តង់ដារគុណភាព:</b>\n{c_qual}"
                 )
                 _send_bot_message(chat_id, msg)
                 
@@ -790,5 +796,7 @@ def handle_callback_query(callback_query: dict) -> None:
                         _bot.answer_callback_query(callback_query["id"])
                 except Exception:
                     pass
+            else:
+                _send_bot_message(chat_id, "⚠️ មិនមានទិន្នន័យសម្រាប់កសិផលនេះទេ។")
     except Exception:
         logger.exception("message_handler: Error in handle_callback_query")
