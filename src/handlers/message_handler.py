@@ -513,6 +513,27 @@ def handle_pricealert(chat_id: int) -> None:
         _send_bot_message(chat_id, "⚠️ មានបញ្ហាក្នុងការផ្ញើដំណឹងតម្លៃទីផ្សារ។")
 
 
+def auto_broadcast_daily_price() -> None:
+    """
+    Called by background thread in app.py to automatically broadcast
+    daily prices at a specific time without admin intervention.
+    """
+    try:
+        alert_msg = generate_price_alert_message(_get_db_connection, _ensure_db_ready)
+        if not alert_msg:
+            return
+            
+        all_chats = get_all_user_chat_ids(_get_db_connection, _ensure_db_ready)
+        for cid in all_chats:
+            try:
+                _send_bot_message(cid, alert_msg)
+            except Exception:
+                pass
+        logger.info("message_handler: Auto-broadcasted daily price to %d users.", len(all_chats))
+    except Exception:
+        logger.exception("message_handler: Error in auto_broadcast_daily_price")
+
+
 def handle_sell(chat_id: int, text: str) -> None:
     """
     REQ-S05: Let farmers list a B-Grade crop.

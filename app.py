@@ -529,11 +529,42 @@ def dashboard():
 
 
 # ═══════════════════════════════════════════════════════════════
-#  STARTUP
+#  STARTUP & BACKGROUND TASKS
 # ═══════════════════════════════════════════════════════════════
+
+def _run_daily_alert_scheduler():
+    import time
+    from datetime import datetime, timedelta
+    from src.handlers.message_handler import auto_broadcast_daily_price
+    
+    logger.info("app: Started daily price alert scheduler thread")
+    last_alert_date = None
+    
+    while True:
+        try:
+            # Render servers are typically in UTC. Cambodia is UTC+7.
+            now_utc = datetime.utcnow()
+            now_khm = now_utc + timedelta(hours=7)
+            
+            # Target alert time: 7:00 AM Cambodia Time
+            if now_khm.hour == 7 and now_khm.date() != last_alert_date:
+                logger.info("app: Triggering daily auto price alert")
+                auto_broadcast_daily_price()
+                last_alert_date = now_khm.date()
+                
+        except Exception:
+            logger.exception("app: Error in daily alert scheduler")
+            
+        # Check every 60 seconds
+        time.sleep(60)
 
 ensure_database_ready()
 configure_webhook()
+
+# Start the background thread for daily alerts
+import threading
+alert_thread = threading.Thread(target=_run_daily_alert_scheduler, daemon=True)
+alert_thread.start()
 
 if __name__ == "__main__":
     app.run(
