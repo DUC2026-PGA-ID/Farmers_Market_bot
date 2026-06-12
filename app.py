@@ -66,9 +66,16 @@ GLOBAL_BOT_COMMANDS = [
     telebot.types.BotCommand("start",        "ចុះឈ្មោះ / ចាប់ផ្តើម"),
     telebot.types.BotCommand("view_catalog", "មើលកាតាឡុក / View Catalog"),
     telebot.types.BotCommand("price",        "តម្លៃទីផ្សារភ្នំពេញ / Market Prices"),
+    telebot.types.BotCommand("market",       "ទីផ្សារលក់រាយ / Retail Market"),
+    telebot.types.BotCommand("sell",         "ប្រកាសលក់កសិផល / Sell Crops"),
+    telebot.types.BotCommand("buyers",       "បញ្ជីអ្នកទិញ / Verified Buyers"),
+    telebot.types.BotCommand("location",     "ផ្ញើទីតាំងចម្ការរបស់អ្នក / My Location"),
     telebot.types.BotCommand("weather",      "អាកាសធាតុ / Live Weather"),
 ]
 ADMIN_BOT_COMMANDS = GLOBAL_BOT_COMMANDS + [
+    telebot.types.BotCommand("addbuyer",     "បន្ថែមអ្នកទិញថ្មី"),
+    telebot.types.BotCommand("broadcast",    "ផ្សាយសារទៅអ្នកប្រើទាំងអស់"),
+    telebot.types.BotCommand("pricealert",   "ប្រកាសតម្លៃទីផ្សារថ្មី"),
     telebot.types.BotCommand("setprice",     "កំណត់តម្លៃផលិតផល"),
     telebot.types.BotCommand("users",        "ស្ថិតិអ្នកប្រើ"),
     telebot.types.BotCommand("recentusers",  "អ្នកប្រើថ្មីៗ"),
@@ -139,8 +146,12 @@ def _ensure_columns(cursor) -> None:
         safe_exec("ALTER TABLE users ADD COLUMN name VARCHAR(255) NULL AFTER tg_username")
     if not col_exists("phone"):
         safe_exec("ALTER TABLE users ADD COLUMN phone VARCHAR(20) NULL AFTER name")
+    if not col_exists("latitude"):
+        safe_exec("ALTER TABLE users ADD COLUMN latitude DECIMAL(10,8) NULL AFTER phone")
+    if not col_exists("longitude"):
+        safe_exec("ALTER TABLE users ADD COLUMN longitude DECIMAL(11,8) NULL AFTER latitude")
     if not col_exists("state"):
-        safe_exec("ALTER TABLE users ADD COLUMN state VARCHAR(20) NOT NULL DEFAULT 'START' AFTER phone")
+        safe_exec("ALTER TABLE users ADD COLUMN state VARCHAR(20) NOT NULL DEFAULT 'START' AFTER longitude")
 
     if col_exists("first_name"):
         safe_exec("UPDATE users SET tg_first_name = first_name WHERE tg_first_name IS NULL AND first_name IS NOT NULL")
@@ -174,10 +185,12 @@ def ensure_database_ready() -> bool:
                     id           BIGINT NOT NULL AUTO_INCREMENT,
                     chat_id      BIGINT NOT NULL,
                     tg_first_name VARCHAR(255),
-                    tg_username  VARCHAR(255),
-                    name         VARCHAR(255),
-                    phone        VARCHAR(20),
-                    state        VARCHAR(20) NOT NULL DEFAULT 'START',
+                    tg_username   VARCHAR(255),
+                    name          VARCHAR(255),
+                    phone         VARCHAR(20),
+                    latitude      DECIMAL(10,8),
+                    longitude     DECIMAL(11,8),
+                    state         VARCHAR(20) NOT NULL DEFAULT 'START',
                     joined_date  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (id),
                     UNIQUE KEY uq_chat_id (chat_id)

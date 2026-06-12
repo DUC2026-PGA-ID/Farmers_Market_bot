@@ -16,6 +16,9 @@ from src.services.price_service import (
     get_today_prices, set_today_price,
     get_crops_for_price_menu, ensure_prices_table,
 )
+from src.services.buyer_service import get_all_buyers, add_buyer
+from src.services.notification_service import get_all_user_chat_ids, generate_price_alert_message
+from src.services.market_service import add_listing, get_recent_listings
 
 logger = logging.getLogger(__name__)
 
@@ -478,6 +481,202 @@ def send_recent_users_msg(chat_id: int, get_recent_users_fn,
         _send_bot_message(chat_id, "⚠️ <b>មានបញ្ហាទាញទិន្នន័យ / Could not load users.</b>")
 
 
+def handle_weather(chat_id: int) -> None:
+    """
+    REQ-S06: Weather Command
+    """
+    try:
+        report = fetch_weather()
+        if not report:
+            _send_bot_message(chat_id, "⚠️ <b>សូមអភ័យទោស!</b>\nប្រព័ន្ធអាកាសធាតុមានបញ្ហា។")
+            return
+            
+        _send_bot_message(chat_id, report)
+    except Exception:
+        logger.exception("message_handler: Error in handle_weather")
+        _send_bot_message(chat_id, "⚠️ មានបញ្ហាក្នុងការទាញយកទិន្នន័យអាកាសធាតុ។")
+
+
+def handle_buyers(chat_id: int) -> None:
+    """
+    REQ-S02: Verified Buyer Directory
+    Displays a list of verified buyers to the farmers.
+    """
+    try:
+        buyers = get_all_buyers(_get_db_connection, _ensure_db_ready)
+        if not buyers:
+            _send_bot_message(
+                chat_id,
+                "🤝 <b>បញ្ជីឈ្មោះអ្នកទិញ</b>\n\n"
+                "<i>មិនទាន់មានអ្នកទិញនៅក្នុងប្រព័ន្ធនៅឡើយទេ។</i>"
+            )
+            return
+            
+        msg = "🤝 <b>បញ្ជីឈ្មោះអ្នកទិញដែលបានផ្ទៀងផ្ទាត់</b>\n<code>━━━━━━━━━━━━━━━━</code>\n"
+        for i, b in enumerate(buyers, 1):
+            icon = "✅" if b["is_verified"] else "⏳"
+            company = f"({escape(b['company'])})" if b["company"] else ""
+            msg += f"\n{i}. {icon} <b>{escape(b['name'])}</b> {company}\n"
+            msg += f"   📞 <code>{escape(b['phone'])}</code>\n"
+            
+        _send_bot_message(chat_id, msg)
+    except Exception:
+        logger.exception("message_handler: Error in handle_buyers")
+        _send_bot_message(chat_id, "⚠️ មានបញ្ហាក្នុងការទាញយកទិន្នន័យអ្នកទិញ។")
+
+
+def handle_addbuyer(chat_id: int, text: str) -> None:
+    """
+    REQ-S02: Admin command to add a buyer.
+    Format: /addbuyer Name, Phone, [Company]
+    """
+    try:
+        parts = text.replace("/addbuyer", "").strip()
+        if not parts:
+            _send_bot_message(
+                chat_id,
+                "ℹ️ <b>របៀបប្រើប្រាស់:</b>\n"
+                "<code>/addbuyer ឈ្មោះ, លេខទូរស័ព្ទ, [ក្រុមហ៊ុន]</code>\n\n"
+                "ឧទាហរណ៍:\n"
+                "<code>/addbuyer លោក សុខ, 012345678, កសិដ្ឋាន កក្កដា</code>"
+            )
+            return
+            
+        items = [i.strip() for i in parts.split(',')]
+        if len(items) < 2:
+            _send_bot_message(chat_id, "⚠️ សូមបញ្ចូលយ៉ាងហោចណាស់ <b>ឈ្មោះ</b> និង <b>លេខទូរស័ព្ទ</b> ដោយខណ្ឌចែកដោយសញ្ញាក្បៀស (,)។")
+            return
+            
+        name = items[0]
+        phone = items[1]
+        company = items[2] if len(items) > 2 else ""
+        
+        success = add_buyer(name, phone, company, _get_db_connection, _ensure_db_ready)
+        if success:
+            _send_bot_message(chat_id, f"✅ <b>បានបន្ថែមអ្នកទិញជោគជ័យ!</b>\n\n👤 {escape(name)}\n📞 {escape(phone)}\n🏢 {escape(company)}")
+        else:
+            _send_bot_message(chat_id, "⚠️ មិនអាចបន្ថែមអ្នកទិញបានទេ សូមព្យាយាមម្តងទៀត។")
+    except Exception:
+        logger.exception("message_handler: Error in handle_addbuyer")
+        _send_bot_message(chat_id, "⚠️ មានបញ្ហាក្នុងការបន្ថែមអ្នកទិញ។")
+
+
+def handle_broadcast(chat_id: int, text: str) -> None:
+    """
+    REQ-S03: Admin command to broadcast a custom message to all users.
+    """
+    try:
+        msg_text = text.replace("/broadcast", "").strip()
+        if not msg_text:
+            _send_bot_message(chat_id, "⚠️ សូមបញ្ចូលសារដែលចង់ផ្ញើ។ ឧទាហរណ៍: <code>/broadcast សួស្តីបងប្អូនកសិករ!</code>")
+            return
+            
+        all_chats = get_all_user_chat_ids(_get_db_connection, _ensure_db_ready)
+        success_count = 0
+        for cid in all_chats:
+            try:
+                _send_bot_message(cid, f"📢 <b>សេចក្តីជូនដំណឹង:</b>\n\n{escape(msg_text)}")
+                success_count += 1
+            except Exception:
+                pass
+                
+        _send_bot_message(chat_id, f"✅ បានផ្ញើសារទៅកាន់អ្នកប្រើប្រាស់ចំនួន <b>{success_count}</b> នាក់។")
+    except Exception:
+        logger.exception("message_handler: Error in handle_broadcast")
+        _send_bot_message(chat_id, "⚠️ មានបញ្ហាក្នុងការផ្ញើសារ។")
+
+
+def handle_pricealert(chat_id: int) -> None:
+    """
+    REQ-S03: Admin command to broadcast today's prices to all users.
+    """
+    try:
+        alert_msg = generate_price_alert_message(_get_db_connection, _ensure_db_ready)
+        if not alert_msg:
+            _send_bot_message(chat_id, "⚠️ មិនមានទិន្នន័យតម្លៃទីផ្សារថ្មីទេ។")
+            return
+            
+        all_chats = get_all_user_chat_ids(_get_db_connection, _ensure_db_ready)
+        success_count = 0
+        for cid in all_chats:
+            try:
+                _send_bot_message(cid, alert_msg)
+                success_count += 1
+            except Exception:
+                pass
+                
+        _send_bot_message(chat_id, f"✅ បានផ្ញើដំណឹងតម្លៃទីផ្សារទៅកាន់អ្នកប្រើប្រាស់ចំនួន <b>{success_count}</b> នាក់។")
+    except Exception:
+        logger.exception("message_handler: Error in handle_pricealert")
+        _send_bot_message(chat_id, "⚠️ មានបញ្ហាក្នុងការផ្ញើដំណឹងតម្លៃទីផ្សារ។")
+
+
+def handle_sell(chat_id: int, text: str) -> None:
+    """
+    REQ-S05: Let farmers list a B-Grade crop.
+    Format: /sell Crop Name, Grade, Quantity, Price
+    """
+    try:
+        parts = text.replace("/sell", "").strip()
+        if not parts:
+            _send_bot_message(
+                chat_id,
+                "ℹ️ <b>របៀបប្រកាសលក់កសិផល (ប្រភេទ B)</b>\n\n"
+                "<code>/sell ឈ្មោះដំណាំ, ប្រភេទ, ចំនួន, តម្លៃ</code>\n\n"
+                "ឧទាហរណ៍:\n"
+                "<code>/sell ស្រូវសើម, ប្រភេទ B, ៥០០គីឡូ, ៨០០៛/គីឡូ</code>"
+            )
+            return
+            
+        items = [i.strip() for i in parts.split(',')]
+        if len(items) < 4:
+            _send_bot_message(chat_id, "⚠️ សូមបញ្ចូលព័ត៌មានឲ្យបានគ្រប់គ្រាន់ ដោយខណ្ឌចែកដោយសញ្ញាក្បៀស (,) ចំនួន៣។")
+            return
+            
+        crop_name = items[0]
+        grade = items[1]
+        quantity = items[2]
+        price = items[3]
+        
+        success = add_listing(chat_id, crop_name, grade, quantity, price, _get_db_connection, _ensure_db_ready)
+        if success:
+            _send_bot_message(chat_id, f"✅ <b>បានប្រកាសលក់ជោគជ័យ!</b>\n\n🌾 {escape(crop_name)}\n🏷 {escape(grade)}\n📦 {escape(quantity)}\n💰 {escape(price)}\n\n<i>អ្នកទិញនឹងឃើញការប្រកាសនេះក្នុង /market</i>")
+        else:
+            _send_bot_message(chat_id, "⚠️ មិនអាចប្រកាសលក់បានទេ សូមព្យាយាមម្តងទៀត។")
+    except Exception:
+        logger.exception("message_handler: Error in handle_sell")
+        _send_bot_message(chat_id, "⚠️ មានបញ្ហាក្នុងការប្រកាសលក់។")
+
+
+def handle_market(chat_id: int) -> None:
+    """
+    REQ-S05: Display all B-Grade listings.
+    """
+    try:
+        listings = get_recent_listings(_get_db_connection, _ensure_db_ready)
+        if not listings:
+            _send_bot_message(
+                chat_id,
+                "🛒 <b>ទីផ្សារលក់រាយ (ប្រភេទ B)</b>\n\n"
+                "<i>មិនទាន់មានការប្រកាសលក់នៅឡើយទេ។</i>\n"
+                "អ្នកអាចប្រកាសលក់បានតាមរយៈ <code>/sell</code>"
+            )
+            return
+            
+        msg = "🛒 <b>ទីផ្សារលក់រាយ (ប្រភេទ B) ថ្មីៗ</b>\n<code>━━━━━━━━━━━━━━━━</code>\n"
+        for l in listings:
+            seller = l['seller_name'] or "កសិករ"
+            phone = l['phone'] or "មិនមានលេខទូរស័ព្ទ"
+            msg += f"\n🌾 <b>{escape(l['crop_name'])}</b> ({escape(l['grade'])})\n"
+            msg += f"📦 {escape(l['quantity'])} | 💰 {escape(l['price'])}\n"
+            msg += f"👤 {escape(seller)} | 📞 <code>{escape(phone)}</code>\n"
+            
+        _send_bot_message(chat_id, msg)
+    except Exception:
+        logger.exception("message_handler: Error in handle_market")
+        _send_bot_message(chat_id, "⚠️ មានបញ្ហាក្នុងការទាញយកទិន្នន័យទីផ្សារ។")
+
+
 # ═══════════════════════════════════════════════════════════════
 #  MAIN MESSAGE ROUTER
 # ═══════════════════════════════════════════════════════════════
@@ -511,7 +710,12 @@ def _route_message(message: dict,
     chat     = message.get("chat") or {}
     chat_id  = chat.get("id")
     text     = (message.get("text") or "").strip()
-    if not chat_id or not text:
+    location = message.get("location")
+    
+    if not chat_id:
+        return
+        
+    if not text and not location:
         return
 
     tg_first_name = user.get("first_name") or "User"
@@ -524,12 +728,42 @@ def _route_message(message: dict,
 
     # Parse command
     command = ""
-    if text.startswith("/"):
+    if text and text.startswith("/"):
         command = text.split()[0].split("@")[0].lower()
+
+    # ── Map / Location logic ────────────────────────────────────
+    if location:
+        lat = location.get("latitude")
+        lng = location.get("longitude")
+        _update_user_state(chat_id, latitude=lat, longitude=lng)
+        _send_bot_message(
+            chat_id,
+            "📍 <b>ទទួលបានទីតាំងជោគជ័យ!</b>\n"
+            "ឥឡូវនេះអ្នកទិញអាចឃើញទីតាំងចម្ការរបស់អ្នកបានយ៉ាងងាយស្រួល។"
+        )
+        return
 
     # ── Command routing ─────────────────────────────────────────
     if command == "/start":
         handle_start(chat_id, user_state)
+        return
+
+    if command == "/location":
+        _send_bot_message(
+            chat_id,
+            "📍 <b>របៀបកំណត់ទីតាំងចម្ការរបស់អ្នក</b>\n\n"
+            "១. ចុចប៊ូតុង 📎 (Attachment)\n"
+            "២. ជ្រើសរើស 📍 Location\n"
+            "៣. ផ្ញើទីតាំងរបស់អ្នកមកកាន់ Bot ជាការស្រេច!"
+        )
+        return
+
+    if command == "/sell":
+        handle_sell(chat_id, text)
+        return
+
+    if command == "/market":
+        handle_market(chat_id)
         return
 
     if command == "/view_catalog":
@@ -538,6 +772,22 @@ def _route_message(message: dict,
 
     if command == "/weather":
         handle_weather(chat_id)
+        return
+
+    if command == "/buyers":
+        handle_buyers(chat_id)
+        return
+
+    if command == "/addbuyer" and is_admin:
+        handle_addbuyer(chat_id, text)
+        return
+
+    if command == "/broadcast" and is_admin:
+        handle_broadcast(chat_id, text)
+        return
+
+    if command == "/pricealert" and is_admin:
+        handle_pricealert(chat_id)
         return
 
     if command == "/price":
@@ -582,7 +832,10 @@ def _route_message(message: dict,
             "<code>━━━━━━━━━━━━━━━━</code>\n"
             "📦 <code>/view_catalog</code> — មើលផលិតផល\n"
             "📊 <code>/price</code> — តម្លៃទីផ្សារភ្នំពេញ\n"
-            "🌤️ <code>/weather</code> — អាកាសធាតុ",
+            "🛒 <code>/market</code> — ទីផ្សារលក់រាយ\n"
+            "🤝 <code>/buyers</code> — បញ្ជីអ្នកទិញ\n"
+            "🌤️ <code>/weather</code> — អាកាសធាតុ\n"
+            "📍 <code>/location</code> — ផ្ញើទីតាំងចម្ការរបស់អ្នក",
         )
 
     else:  # STATE_START or unknown
