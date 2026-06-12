@@ -65,9 +65,11 @@ TELEGRAM_SECRET_TOKEN = (
 GLOBAL_BOT_COMMANDS = [
     telebot.types.BotCommand("start",        "ចុះឈ្មោះ / ចាប់ផ្តើម"),
     telebot.types.BotCommand("view_catalog", "មើលកាតាឡុក / View Catalog"),
+    telebot.types.BotCommand("price",        "តម្លៃទីផ្សារភ្នំពេញ / Market Prices"),
     telebot.types.BotCommand("weather",      "អាកាសធាតុ / Live Weather"),
 ]
 ADMIN_BOT_COMMANDS = GLOBAL_BOT_COMMANDS + [
+    telebot.types.BotCommand("setprice",     "កំណត់តម្លៃផលិតផល"),
     telebot.types.BotCommand("users",        "ស្ថិតិអ្នកប្រើ"),
     telebot.types.BotCommand("recentusers",  "អ្នកប្រើថ្មីៗ"),
 ]

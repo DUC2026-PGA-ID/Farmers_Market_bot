@@ -12,6 +12,10 @@ import telebot
 
 from src.services.catalog_service import get_all_crops
 from src.services.weather_service import fetch_weather
+from src.services.price_service import (
+    get_today_prices, set_today_price,
+    get_crops_for_price_menu, ensure_prices_table,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -228,6 +232,198 @@ def handle_weather(chat_id: int) -> None:
         )
 
 
+# ═══════════════════════════════════════════════════════════════
+#  REQ-S01 — DAILY PRICE TRACKER
+# ═══════════════════════════════════════════════════════════════
+
+_TREND_ICON = {
+    "up":      "📈",
+    "down":    "📉",
+    "stable":  "➡️",
+    "new":     "🆕",
+    "no_data": "❓",
+}
+
+_TREND_LABEL = {
+    "up":      "ឡើង",
+    "down":    "ចុះ",
+    "stable":  "ថិតថេរ",
+    "new":     "ថ្មី",
+    "no_data": "គ្មានទិន្នន័យ",
+}
+
+
+def _fmt_price(amount) -> str:
+    """Format number as KHR with comma separator. e.g. 25000 → 25,000 ៛"""
+    if amount is None:
+        return "—"
+    try:
+        return f"{int(float(amount)):,} ៛"
+    except (ValueError, TypeError):
+        return str(amount)
+
+
+def handle_price(chat_id: int) -> None:
+    """
+    REQ-S01: Show today's verified Phnom Penh market prices with trend.
+    Delegated entirely to price_service — no DB logic here.
+    """
+    try:
+        ensure_prices_table(_get_db_connection, _ensure_db_ready)
+        prices = get_today_prices(_get_db_connection, _ensure_db_ready)
+
+        if not prices:
+            _send_bot_message(
+                chat_id,
+                "📊 <b>មិនទាន់មានទិន្នន័យតម្លៃទីផ្សារទេ។</b>\n"
+                "<i>Admin នឹងធ្វើបច្ចុប្បន្នភាពតម្លៃប្រចាំថ្ងៃ។</i>"
+            )
+            return
+
+        lines = [
+            "📊 <b>តម្លៃទីផ្សារភ្នំពេញ — ថ្ងៃនេះ</b>",
+            "<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>",
+        ]
+
+        has_any_price = False
+        for p in prices:
+            trend = p["trend"]
+            icon  = _TREND_ICON.get(trend, "❓")
+            label = _TREND_LABEL.get(trend, "")
+            name  = escape(p["crop_name"])
+            unit  = escape(p["unit"])
+
+            if trend == "no_data":
+                lines.append(f"❓ <b>{name}</b> — <i>មិនទាន់មានតម្លៃ</i>")
+                continue
+
+            has_any_price = True
+            price_str = _fmt_price(p["price"])
+            change_str = ""
+            if trend == "up":
+                change_str = f" <i>(+{_fmt_price(p['change'])})</i>"
+            elif trend == "down":
+                change_str = f" <i>(-{_fmt_price(p['change'])})</i>"
+
+            lines.append(
+                f"{icon} <b>{name}</b> — {price_str}/{unit}\n"
+                f"   └ {label}{change_str}"
+            )
+
+        lines.append("<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>")
+        if has_any_price:
+            lines.append("<i>💡 ប្រភព: ធ្វើបច្ចុប្បន្នភាពដោយ Admin ប្រចាំថ្ងៃ</i>")
+        else:
+            lines.append("<i>⏳ Admin នឹងធ្វើបច្ចុប្បន្នភាពតម្លៃឆាប់ៗ</i>")
+
+        _send_bot_message(chat_id, "\n".join(lines))
+
+    except Exception:
+        logger.exception("handle_price: unexpected error")
+        _send_bot_message(
+            chat_id,
+            "⚠️ <b>មានបញ្ហាទាញតម្លៃ / Could not load prices. Try again.</b>"
+        )
+
+
+def handle_setprice(chat_id: int, text: str) -> None:
+    """
+    REQ-S01 Admin: /setprice [crop_name] [price_khr]
+    Example: /setprice Rice 25000
+             /setprice Corn 8500
+    """
+    try:
+        ensure_prices_table(_get_db_connection, _ensure_db_ready)
+        parts = text.strip().split()
+
+        # /setprice with no args → show crop list
+        if len(parts) < 3:
+            crops = get_crops_for_price_menu(_get_db_connection, _ensure_db_ready)
+            if not crops:
+                _send_bot_message(chat_id, "❌ <b>មិនមានផលិតផលក្នុង Catalog ទេ។</b>")
+                return
+            lines = [
+                "🛠️ <b>កំណត់តម្លៃប្រចាំថ្ងៃ / Set Today's Price</b>",
+                "<code>━━━━━━━━━━━━━━━━━━━━━━</code>",
+                "<b>Format:</b> <code>/setprice [ឈ្មោះ] [តម្លៃ ៛]</code>",
+                "",
+                "<b>ឧទាហរណ៍ / Examples:</b>",
+            ]
+            for c in crops:
+                lines.append(f"• <code>/setprice {c['crop_name']} 25000</code>")
+            lines.append("<code>━━━━━━━━━━━━━━━━━━━━━━</code>")
+            _send_bot_message(chat_id, "\n".join(lines))
+            return
+
+        # Parse: /setprice [crop_name] [price]
+        # Allow crop names with spaces: /setprice Damaged Rice 15000
+        try:
+            price_khr = float(parts[-1].replace(",", ""))
+            crop_name_input = " ".join(parts[1:-1]).strip().lower()
+        except ValueError:
+            _send_bot_message(
+                chat_id,
+                "❌ <b>Format មិនត្រឹមត្រូវ!</b>\n"
+                "ឧទាហរណ៍: <code>/setprice Rice 25000</code>"
+            )
+            return
+
+        if price_khr <= 0:
+            _send_bot_message(chat_id, "❌ <b>តម្លៃត្រូវតែធំជាង 0!</b>")
+            return
+
+        # Find crop by name (case-insensitive fuzzy match)
+        crops = get_crops_for_price_menu(_get_db_connection, _ensure_db_ready)
+        matched = None
+        for c in crops:
+            if c["crop_name"].lower() == crop_name_input:
+                matched = c
+                break
+        # Partial match fallback
+        if not matched:
+            for c in crops:
+                if crop_name_input in c["crop_name"].lower():
+                    matched = c
+                    break
+
+        if not matched:
+            names = ", ".join(f"<code>{c['crop_name']}</code>" for c in crops)
+            _send_bot_message(
+                chat_id,
+                f"❌ <b>រកមិនឃើញ Crop: {escape(crop_name_input)}</b>\n"
+                f"ឈ្មោះដែលអាចប្រើ: {names}"
+            )
+            return
+
+        ok = set_today_price(
+            crop_id      = matched["crop_id"],
+            price        = price_khr,
+            admin_chat_id= chat_id,
+            get_db_connection    = _get_db_connection,
+            ensure_database_ready= _ensure_db_ready,
+        )
+
+        if ok:
+            _send_bot_message(
+                chat_id,
+                "✅ <b>បានកំណត់តម្លៃជោគជ័យ!</b>\n"
+                "<code>━━━━━━━━━━━━━━━━━━━━━━</code>\n"
+                f"🌾 <b>ផលិតផល:</b> {escape(matched['crop_name'])} ({escape(matched['unit'])})\n"
+                f"💰 <b>តម្លៃថ្ងៃនេះ:</b> {_fmt_price(price_khr)}\n"
+                "<code>━━━━━━━━━━━━━━━━━━━━━━</code>\n"
+                "<i>អ្នកប្រើប្រាស់អាចឃើញតម្លៃនេះដោយវាយ /price</i>"
+            )
+        else:
+            _send_bot_message(chat_id, "❌ <b>មានបញ្ហា DB / Failed to save price.</b>")
+
+    except Exception:
+        logger.exception("handle_setprice: unexpected error")
+        _send_bot_message(
+            chat_id,
+            "⚠️ <b>មានបញ្ហាផ្ទៃក្នុង / Internal error. Please try again.</b>"
+        )
+
+
 def send_admin_stats(chat_id: int, get_user_stats_fn) -> None:
     try:
         s = get_user_stats_fn()
@@ -344,6 +540,14 @@ def _route_message(message: dict,
         handle_weather(chat_id)
         return
 
+    if command == "/price":
+        handle_price(chat_id)
+        return
+
+    if command == "/setprice" and is_admin:
+        handle_setprice(chat_id, text)
+        return
+
     if command == "/users" and is_admin:
         send_admin_stats(chat_id, get_user_stats_fn)
         return
@@ -375,8 +579,10 @@ def _route_message(message: dict,
         _send_bot_message(
             chat_id,
             "✅ <b>អ្នកបានចុះឈ្មោះហើយ!</b>\n"
-            "ប្រើ <code>/view_catalog</code> ដើម្បីមើលផលិតផល\n"
-            "ប្រើ <code>/weather</code> ដើម្បីមើលអាកាសធាតុ",
+            "<code>━━━━━━━━━━━━━━━━</code>\n"
+            "📦 <code>/view_catalog</code> — មើលផលិតផល\n"
+            "📊 <code>/price</code> — តម្លៃទីផ្សារភ្នំពេញ\n"
+            "🌤️ <code>/weather</code> — អាកាសធាតុ",
         )
 
     else:  # STATE_START or unknown
