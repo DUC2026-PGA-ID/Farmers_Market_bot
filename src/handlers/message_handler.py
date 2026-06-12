@@ -13,7 +13,7 @@ import telebot
 from src.services.catalog_service import get_all_crops
 from src.services.weather_service import fetch_weather
 from src.services.price_service import (
-    get_today_prices, set_today_price,
+    get_today_prices,
     get_crops_for_price_menu, ensure_prices_table,
 )
 from src.services.buyer_service import get_all_buyers, add_buyer
@@ -326,104 +326,6 @@ def handle_price(chat_id: int) -> None:
         _send_bot_message(
             chat_id,
             "⚠️ <b>មានបញ្ហាទាញតម្លៃ / Could not load prices. Try again.</b>"
-        )
-
-
-def handle_setprice(chat_id: int, text: str) -> None:
-    """
-    REQ-S01 Admin: /setprice [crop_name] [price_khr]
-    Example: /setprice Rice 25000
-             /setprice Corn 8500
-    """
-    try:
-        ensure_prices_table(_get_db_connection, _ensure_db_ready)
-        parts = text.strip().split()
-
-        # /setprice with no args → show crop list
-        if len(parts) < 3:
-            crops = get_crops_for_price_menu(_get_db_connection, _ensure_db_ready)
-            if not crops:
-                _send_bot_message(chat_id, "❌ <b>មិនមានផលិតផលក្នុង Catalog ទេ។</b>")
-                return
-            lines = [
-                "🛠️ <b>កំណត់តម្លៃប្រចាំថ្ងៃ / Set Today's Price</b>",
-                "<code>━━━━━━━━━━━━━━━━━━━━━━</code>",
-                "<b>Format:</b> <code>/setprice [ឈ្មោះ] [តម្លៃ ៛]</code>",
-                "",
-                "<b>ឧទាហរណ៍ / Examples:</b>",
-            ]
-            for c in crops:
-                lines.append(f"• <code>/setprice {c['crop_name']} 25000</code>")
-            lines.append("<code>━━━━━━━━━━━━━━━━━━━━━━</code>")
-            _send_bot_message(chat_id, "\n".join(lines))
-            return
-
-        # Parse: /setprice [crop_name] [price]
-        # Allow crop names with spaces: /setprice Damaged Rice 15000
-        try:
-            price_khr = float(parts[-1].replace(",", ""))
-            crop_name_input = " ".join(parts[1:-1]).strip().lower()
-        except ValueError:
-            _send_bot_message(
-                chat_id,
-                "❌ <b>Format មិនត្រឹមត្រូវ!</b>\n"
-                "ឧទាហរណ៍: <code>/setprice Rice 25000</code>"
-            )
-            return
-
-        if price_khr <= 0:
-            _send_bot_message(chat_id, "❌ <b>តម្លៃត្រូវតែធំជាង 0!</b>")
-            return
-
-        # Find crop by name (case-insensitive fuzzy match)
-        crops = get_crops_for_price_menu(_get_db_connection, _ensure_db_ready)
-        matched = None
-        for c in crops:
-            if c["crop_name"].lower() == crop_name_input:
-                matched = c
-                break
-        # Partial match fallback
-        if not matched:
-            for c in crops:
-                if crop_name_input in c["crop_name"].lower():
-                    matched = c
-                    break
-
-        if not matched:
-            names = ", ".join(f"<code>{c['crop_name']}</code>" for c in crops)
-            _send_bot_message(
-                chat_id,
-                f"❌ <b>រកមិនឃើញ Crop: {escape(crop_name_input)}</b>\n"
-                f"ឈ្មោះដែលអាចប្រើ: {names}"
-            )
-            return
-
-        ok = set_today_price(
-            crop_id      = matched["crop_id"],
-            price        = price_khr,
-            admin_chat_id= chat_id,
-            get_db_connection    = _get_db_connection,
-            ensure_database_ready= _ensure_db_ready,
-        )
-
-        if ok:
-            _send_bot_message(
-                chat_id,
-                "✅ <b>បានកំណត់តម្លៃជោគជ័យ!</b>\n"
-                "<code>━━━━━━━━━━━━━━━━━━━━━━</code>\n"
-                f"🌾 <b>ផលិតផល:</b> {escape(matched['crop_name'])} ({escape(matched['unit'])})\n"
-                f"💰 <b>តម្លៃថ្ងៃនេះ:</b> {_fmt_price(price_khr)}\n"
-                "<code>━━━━━━━━━━━━━━━━━━━━━━</code>\n"
-                "<i>អ្នកប្រើប្រាស់អាចឃើញតម្លៃនេះដោយវាយ /price</i>"
-            )
-        else:
-            _send_bot_message(chat_id, "❌ <b>មានបញ្ហា DB / Failed to save price.</b>")
-
-    except Exception:
-        logger.exception("handle_setprice: unexpected error")
-        _send_bot_message(
-            chat_id,
-            "⚠️ <b>មានបញ្ហាផ្ទៃក្នុង / Internal error. Please try again.</b>"
         )
 
 
@@ -792,10 +694,6 @@ def _route_message(message: dict,
 
     if command == "/price":
         handle_price(chat_id)
-        return
-
-    if command == "/setprice" and is_admin:
-        handle_setprice(chat_id, text)
         return
 
     if command == "/users" and is_admin:
