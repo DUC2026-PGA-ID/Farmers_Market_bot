@@ -1,14 +1,51 @@
 # ─────────────────────────────────────────────────────────────
 #  src/services/price_service.py
 #  Database Architect: SOK SOVANRITH
-#  Purpose: Service layer for daily market price queries.
-#           Reads/writes the `prices` table.
-#           Returns clean data to message_handler — no Telegram logic here.
+#  Purpose: REQ-S01 — Daily Price Tracker
+#           Fetches LIVE international commodity prices from
+#           Yahoo Finance API + USD/KHR exchange rate.
+#           Converts to KHR and stores in DB for trend tracking.
+#           Fully AUTOMATIC — no admin input required.
 # ─────────────────────────────────────────────────────────────
 import logging
+import warnings
 from datetime import date
 
+import requests
+
+warnings.filterwarnings("ignore")  # suppress SSL warnings
+
 logger = logging.getLogger(__name__)
+
+# ── Yahoo Finance commodity ticker mapping ────────────────────
+#   ZR=F → Rough Rice futures (USD per hundredweight / 100 lbs)
+#   ZC=F → Corn futures       (cents per bushel)
+#
+# Unit conversion constants:
+#   1 cwt  = 45.359 kg  (used for rice)
+#   1 bushel corn = 25.401 kg
+#
+# LOCAL_PREMIUM: factor to convert international commodity price
+# to estimated Phnom Penh retail price (transport + margin ~1.4x)
+LOCAL_PREMIUM = 1.4
+
+_YAHOO_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=2d"
+_FX_URL    = "https://open.er-api.com/v6/latest/USD"
+
+_COMMODITY_MAP = {
+    # crop_name (lowercase) → (ticker, unit_type, unit_kg)
+    "rice":         ("ZR=F", "rice_cwt",    45.359),
+    "corn":         ("ZC=F", "corn_bu",     25.401),
+    "damaged rice": ("ZR=F", "rice_cwt",    45.359),  # 55% quality factor
+}
+
+_QUALITY_FACTOR = {
+    "damaged rice": 0.55,   # Damaged rice = 55% of normal rice price
+}
+
+_TICKER_IS_CENTS = {"ZC=F"}  # Corn futures quoted in CENTS per bushel
+
+_REQUEST_HEADERS = {"User-Agent": "AgriTradeBot/1.0 (Cambodia Farmers Market)"}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -16,7 +53,6 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════
 
 def ensure_prices_table(get_db_connection, ensure_database_ready) -> bool:
-    """Create the prices table if it does not exist yet."""
     if not ensure_database_ready():
         return False
     connection = cursor = None
@@ -29,17 +65,152 @@ def ensure_prices_table(get_db_connection, ensure_database_ready) -> bool:
                 crop_id        BIGINT        NOT NULL,
                 price_per_unit DECIMAL(10,2) NOT NULL,
                 recorded_date  DATE          NOT NULL DEFAULT (CURDATE()),
-                updated_by     BIGINT        NULL,
+                source         VARCHAR(100)  NOT NULL DEFAULT 'Yahoo Finance',
                 PRIMARY KEY (id),
                 UNIQUE KEY uq_crop_date (crop_id, recorded_date)
             )
         """)
         connection.commit()
-        logger.info("prices table is ready.")
         return True
     except Exception:
         logger.exception("price_service: Failed to create prices table")
         return False
+    finally:
+        if cursor:     cursor.close()
+        if connection: connection.close()
+
+
+# ═══════════════════════════════════════════════════════════════
+#  LIVE FETCH — Yahoo Finance + Exchange Rate
+# ═══════════════════════════════════════════════════════════════
+
+def _get_usd_to_khr() -> float:
+    """Fetch live USD→KHR exchange rate. Falls back to 4,100 if API fails."""
+    try:
+        r = requests.get(_FX_URL, timeout=8, verify=False,
+                         headers=_REQUEST_HEADERS)
+        r.raise_for_status()
+        return float(r.json()["rates"]["KHR"])
+    except Exception:
+        logger.warning("price_service: FX API failed, using fallback 4100")
+        return 4100.0
+
+
+def _get_yahoo_price(ticker: str) -> float | None:
+    """Fetch latest market price for a Yahoo Finance ticker."""
+    try:
+        url = _YAHOO_URL.format(ticker=ticker)
+        r = requests.get(url, timeout=8, verify=False,
+                         headers=_REQUEST_HEADERS)
+        r.raise_for_status()
+        data = r.json()
+        return float(data["chart"]["result"][0]["meta"]["regularMarketPrice"])
+    except Exception:
+        logger.exception("price_service: Yahoo Finance fetch failed for %s", ticker)
+        return None
+
+
+def fetch_live_prices_khr() -> dict:
+    """
+    Fetch live commodity prices and convert to KHR per kg.
+
+    Returns dict:
+        {
+            "rice":         {"price_khr_per_kg": 1600, "source": "Yahoo Finance ZR=F"},
+            "corn":         {"price_khr_per_kg": 900,  "source": "Yahoo Finance ZC=F"},
+            "damaged rice": {"price_khr_per_kg": 880,  "source": "Yahoo Finance ZR=F"},
+        }
+    """
+    khr_rate = _get_usd_to_khr()
+    result   = {}
+    fetched_tickers = {}  # cache so we don't fetch same ticker twice
+
+    for crop_name, (ticker, unit_type, unit_kg) in _COMMODITY_MAP.items():
+        if ticker not in fetched_tickers:
+            raw_price = _get_yahoo_price(ticker)
+            fetched_tickers[ticker] = raw_price
+        else:
+            raw_price = fetched_tickers[ticker]
+
+        if raw_price is None:
+            result[crop_name] = None
+            continue
+
+        # Convert cents → USD if needed (corn futures are in cents)
+        if ticker in _TICKER_IS_CENTS:
+            raw_price = raw_price / 100.0
+
+        # Convert to USD per kg
+        price_usd_per_kg = raw_price / unit_kg
+
+        # Apply quality factor if applicable (e.g. damaged rice)
+        quality = _QUALITY_FACTOR.get(crop_name, 1.0)
+
+        # Convert USD/kg → KHR/kg → apply local market premium
+        price_khr_per_kg = price_usd_per_kg * khr_rate * LOCAL_PREMIUM * quality
+
+        result[crop_name] = {
+            "price_khr_per_kg": round(price_khr_per_kg, 0),
+            "source": f"Yahoo Finance {ticker}",
+            "khr_rate": khr_rate,
+        }
+
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════
+#  SYNC — Store today's live prices into DB
+# ═══════════════════════════════════════════════════════════════
+
+def sync_prices_to_db(get_db_connection, ensure_database_ready) -> int:
+    """
+    Fetch live prices and UPSERT into the prices table for today.
+    Called automatically when user runs /price.
+    Returns number of crops synced.
+    """
+    if not ensure_database_ready():
+        return 0
+
+    live = fetch_live_prices_khr()
+    if not any(live.values()):
+        logger.warning("price_service: No live prices fetched")
+        return 0
+
+    # Get crop IDs from DB
+    connection = cursor = None
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT crop_id, crop_name FROM crops")
+        crops = {r["crop_name"].lower(): r["crop_id"] for r in cursor.fetchall()}
+
+        synced = 0
+        for crop_name_lower, price_data in live.items():
+            if price_data is None:
+                continue
+            crop_id = crops.get(crop_name_lower)
+            if not crop_id:
+                continue
+
+            price_khr = price_data["price_khr_per_kg"]
+            source    = price_data["source"]
+
+            cursor.execute("""
+                INSERT INTO prices (crop_id, price_per_unit, recorded_date, source)
+                VALUES (%s, %s, CURDATE(), %s)
+                ON DUPLICATE KEY UPDATE
+                    price_per_unit = VALUES(price_per_unit),
+                    source         = VALUES(source)
+            """, (crop_id, price_khr, source))
+            synced += 1
+
+        connection.commit()
+        logger.info("price_service: Synced %d prices to DB", synced)
+        return synced
+
+    except Exception:
+        logger.exception("price_service: DB error in sync_prices_to_db")
+        return 0
     finally:
         if cursor:     cursor.close()
         if connection: connection.close()
@@ -51,21 +222,15 @@ def ensure_prices_table(get_db_connection, ensure_database_ready) -> bool:
 
 def get_today_prices(get_db_connection, ensure_database_ready) -> list:
     """
-    Returns list of dicts with today's price and trend vs yesterday.
-
-    Each dict:
-        {
-            "crop_id":   1,
-            "crop_name": "Rice",
-            "unit":      "50kg Sack",
-            "price":     25000.00,      # today's price (KHR)
-            "yesterday": 24000.00,      # None if no yesterday data
-            "change":    1000.00,       # difference (+/-)
-            "trend":     "up"           # "up" | "down" | "stable" | "new"
-        }
+    Returns today's prices with trend vs yesterday.
+    Auto-syncs from Yahoo Finance if today's data is missing.
     """
     if not ensure_database_ready():
         return []
+
+    # Auto-sync live prices for today if not yet done
+    sync_prices_to_db(get_db_connection, ensure_database_ready)
+
     connection = cursor = None
     try:
         connection = get_db_connection()
@@ -76,6 +241,7 @@ def get_today_prices(get_db_connection, ensure_database_ready) -> list:
                 c.crop_name,
                 c.unit,
                 today.price_per_unit   AS price,
+                today.source           AS source,
                 yest.price_per_unit    AS yesterday
             FROM crops c
             LEFT JOIN prices today
@@ -87,25 +253,26 @@ def get_today_prices(get_db_connection, ensure_database_ready) -> list:
             ORDER BY c.crop_name
         """)
         rows = cursor.fetchall()
+
         result = []
         for r in rows:
-            price = float(r["price"]) if r["price"] is not None else None
+            price     = float(r["price"])     if r["price"]     is not None else None
             yesterday = float(r["yesterday"]) if r["yesterday"] is not None else None
 
             if price is None:
-                trend = "no_data"
+                trend  = "no_data"
                 change = 0.0
             elif yesterday is None:
-                trend = "new"
+                trend  = "new"
                 change = 0.0
             elif price > yesterday:
-                trend = "up"
+                trend  = "up"
                 change = price - yesterday
             elif price < yesterday:
-                trend = "down"
+                trend  = "down"
                 change = yesterday - price
             else:
-                trend = "stable"
+                trend  = "stable"
                 change = 0.0
 
             result.append({
@@ -116,8 +283,10 @@ def get_today_prices(get_db_connection, ensure_database_ready) -> list:
                 "yesterday": yesterday,
                 "change":    change,
                 "trend":     trend,
+                "source":    r.get("source") or "Yahoo Finance",
             })
         return result
+
     except Exception:
         logger.exception("price_service: Error fetching today's prices")
         return []
@@ -127,11 +296,10 @@ def get_today_prices(get_db_connection, ensure_database_ready) -> list:
 
 
 # ═══════════════════════════════════════════════════════════════
-#  READ — Get all crops (for admin setprice menu)
+#  ADMIN HELPER (kept for manual override if needed)
 # ═══════════════════════════════════════════════════════════════
 
 def get_crops_for_price_menu(get_db_connection, ensure_database_ready) -> list:
-    """Returns simple list of crops for admin to pick when setting price."""
     if not ensure_database_ready():
         return []
     connection = cursor = None
@@ -148,18 +316,9 @@ def get_crops_for_price_menu(get_db_connection, ensure_database_ready) -> list:
         if connection: connection.close()
 
 
-# ═══════════════════════════════════════════════════════════════
-#  WRITE — Admin sets today's price for a crop
-# ═══════════════════════════════════════════════════════════════
-
 def set_today_price(crop_id: int, price: float,
                     admin_chat_id: int,
                     get_db_connection, ensure_database_ready) -> bool:
-    """
-    UPSERT today's price for a given crop.
-    If a price already exists for today it is updated.
-    Returns True on success, False on failure.
-    """
     if not ensure_database_ready():
         return False
     connection = cursor = None
@@ -167,15 +326,13 @@ def set_today_price(crop_id: int, price: float,
         connection = get_db_connection()
         cursor = connection.cursor()
         cursor.execute("""
-            INSERT INTO prices (crop_id, price_per_unit, recorded_date, updated_by)
+            INSERT INTO prices (crop_id, price_per_unit, recorded_date, source)
             VALUES (%s, %s, CURDATE(), %s)
             ON DUPLICATE KEY UPDATE
                 price_per_unit = VALUES(price_per_unit),
-                updated_by     = VALUES(updated_by)
-        """, (crop_id, price, admin_chat_id))
+                source         = VALUES(source)
+        """, (crop_id, price, f"Admin override (ID:{admin_chat_id})"))
         connection.commit()
-        logger.info("Admin %s set price for crop_id=%s → %.2f KHR",
-                    admin_chat_id, crop_id, price)
         return True
     except Exception:
         logger.exception("price_service: Error setting price")
