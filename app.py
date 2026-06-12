@@ -75,7 +75,6 @@ GLOBAL_BOT_COMMANDS = [
 ADMIN_BOT_COMMANDS = GLOBAL_BOT_COMMANDS + [
     telebot.types.BotCommand("addbuyer",     "បន្ថែមអ្នកទិញថ្មី"),
     telebot.types.BotCommand("broadcast",    "ផ្សាយសារទៅអ្នកប្រើទាំងអស់"),
-    telebot.types.BotCommand("pricealert",   "ប្រកាសតម្លៃទីផ្សារថ្មី"),
     telebot.types.BotCommand("users",        "ស្ថិតិអ្នកប្រើ"),
     telebot.types.BotCommand("recentusers",  "អ្នកប្រើថ្មីៗ"),
 ]

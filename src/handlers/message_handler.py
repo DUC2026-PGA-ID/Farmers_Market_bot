@@ -772,3 +772,36 @@ def _route_message(message: dict,
             chat_id,
             "👋 ប្រើ <code>/start</code> ដើម្បីចុះឈ្មោះ!",
         )
+
+
+def handle_callback_query(callback_query: dict) -> None:
+    try:
+        data = callback_query.get("data")
+        message = callback_query.get("message")
+        if not data or not message:
+            return
+            
+        chat_id = message["chat"]["id"]
+        
+        if data.startswith("crop_"):
+            crop_id = int(data.split("_")[1])
+            crop = get_crop_by_id(crop_id, _get_db_connection, _ensure_db_ready)
+            if crop:
+                msg = (
+                    f"📦 <b>ព័ត៌មានលម្អិត: {escape(crop['crop_name'])}</b>\n"
+                    "<code>━━━━━━━━━━━━━━━━━━━━━━</code>\n"
+                    f"📋 <b>ប្រភេទ:</b> {escape(crop['category'])}\n"
+                    f"⚖️ <b>ឯកតា:</b> {escape(crop['unit'])}\n\n"
+                    f"📝 <b>ការពិពណ៌នា:</b>\n{escape(crop['description'] or 'មិនមាន')}\n\n"
+                    f"⭐ <b>ស្តង់ដារគុណភាព:</b>\n{escape(crop['quality_standards'] or 'មិនមាន')}"
+                )
+                _send_bot_message(chat_id, msg)
+                
+                # Answer callback query to remove loading state on button
+                try:
+                    if _bot:
+                        _bot.answer_callback_query(callback_query["id"])
+                except Exception:
+                    pass
+    except Exception:
+        logger.exception("message_handler: Error in handle_callback_query")
