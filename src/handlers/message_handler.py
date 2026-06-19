@@ -325,8 +325,13 @@ def handle_price(chat_id: int) -> None:
             trend = p["trend"]
             icon  = _TREND_ICON.get(trend, "❓")
             label = _TREND_LABEL.get(trend, "")
-            name  = escape(p["crop_name"])
-            unit  = escape(p["unit"])
+            kh_name = _translate_to_khmer(p["crop_name"])
+            kh_unit = _translate_to_khmer(p["unit"])
+            if p["crop_name"] == "Damaged Rice":
+                kh_unit = "គីឡូក្រាម"
+                
+            name  = escape(kh_name)
+            unit  = escape(kh_unit)
 
             if trend == "no_data":
                 lines.append(f"❓ <b>{name}</b> — <i>មិនទាន់មានតម្លៃ</i>")
