@@ -632,6 +632,12 @@ def handle_market(chat_id: int) -> None:
             msg += f"👤 {escape(seller)} | 📞 <code>{escape(phone)}</code>\n"
             msg += f"💬 Telegram: {escape(tg_un)}\n"
             
+            lat = l.get('latitude')
+            lon = l.get('longitude')
+            if lat and lon:
+                maps_url = f"https://www.google.com/maps?q={lat},{lon}"
+                msg += f"📍 <b>ទីតាំងចម្ការ:</b> <a href='{maps_url}'>មើលលើផែនទី 🗺️</a>\n"
+            
         _send_bot_message(chat_id, msg)
     except Exception:
         logger.exception("message_handler: Error in handle_market")
