@@ -574,10 +574,10 @@ def handle_sell(chat_id: int, text: str) -> None:
         if not parts:
             _send_bot_message(
                 chat_id,
-                "ℹ️ របៀបប្រកាសលក់កសិផល (ប្រភេទ B)\n\n"
+                "ℹ️ របៀបប្រកាសលក់កសិផល\n\n"
                 "/sell ឈ្មោះដំណាំ, ប្រភេទ, ចំនួន, តម្លៃ\n\n"
                 "ឧទាហរណ៍:\n"
-                "/sell ស្រូវសើម, ប្រភេទ B, ៥០០គីឡូ, ៨០០៛/គីឡូ"
+                "/sell ស្រូវសើម, ប្រភេទ A, ៥០០គីឡូ, ១២០០៛/គីឡូ"
             )
             return
             
@@ -610,13 +610,13 @@ def handle_market(chat_id: int) -> None:
         if not listings:
             _send_bot_message(
                 chat_id,
-                "🛒 <b>ទីផ្សារលក់រាយ (ប្រភេទ B)</b>\n\n"
+                "🛒 <b>ទីផ្សារលក់រាយ</b>\n\n"
                 "<i>មិនទាន់មានការប្រកាសលក់នៅឡើយទេ។</i>\n"
                 "អ្នកអាចប្រកាសលក់បានតាមរយៈ <code>/sell</code>"
             )
             return
             
-        msg = "🛒 <b>ទីផ្សារលក់រាយ (ប្រភេទ B) ថ្មីៗ</b>\n<code>━━━━━━━━━━━━━━━━</code>\n"
+        msg = "🛒 <b>ទីផ្សារលក់រាយថ្មីៗ</b>\n<code>━━━━━━━━━━━━━━━━</code>\n"
         for l in listings:
             seller = l['seller_name'] or "កសិករ"
             phone = l['phone'] or "មិនមានលេខទូរស័ព្ទ"
