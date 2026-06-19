@@ -402,12 +402,18 @@ def handle_buyers(chat_id: int) -> None:
             )
             return
             
-        msg = "🤝 <b>បញ្ជីឈ្មោះអ្នកទិញដែលបានផ្ទៀងផ្ទាត់</b>\n<code>━━━━━━━━━━━━━━━━</code>\n"
+        msg = "🤝 <b>បញ្ជីឈ្មោះអ្នកទិញដែលបានផ្ទៀងផ្ទាត់</b>\n<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>\n\n"
         for i, b in enumerate(buyers, 1):
             icon = "✅" if b["is_verified"] else "⏳"
-            company = f"({escape(b['company'])})" if b["company"] else ""
-            msg += f"\n{i}. {icon} <b>{escape(b['name'])}</b> {company}\n"
-            msg += f"   📞 <code>{escape(b['phone'])}</code>\n"
+            company = f"🏢 <b>ក្រុមហ៊ុន:</b> {escape(b['company'])}\n" if b["company"] else ""
+            username = b.get("telegram_username")
+            username_str = f"💬 <b>Telegram:</b> <a href='https://t.me/{escape(username.replace('@', ''))}'>{escape(username)}</a>\n" if username else ""
+            
+            msg += f"👤 <b>{i}. {escape(b['name'])}</b> {icon}\n"
+            msg += f"📞 <b>ទូរស័ព្ទ:</b> <code>{escape(b['phone'])}</code>\n"
+            msg += username_str
+            msg += company
+            msg += "<code>━━━━━━━━━━━━━━━━</code>\n"
             
         _send_bot_message(chat_id, msg)
     except Exception:
@@ -418,7 +424,7 @@ def handle_buyers(chat_id: int) -> None:
 def handle_addbuyer(chat_id: int, text: str) -> None:
     """
     REQ-S02: Admin command to add a buyer.
-    Format: /addbuyer Name, Phone, [Company]
+    Format: /addbuyer Name, Phone, @username, [Company]
     """
     try:
         parts = text.replace("/addbuyer", "").strip()
@@ -426,24 +432,29 @@ def handle_addbuyer(chat_id: int, text: str) -> None:
             _send_bot_message(
                 chat_id,
                 "ℹ️ <b>របៀបប្រើប្រាស់:</b>\n"
-                "<code>/addbuyer ឈ្មោះ, លេខទូរស័ព្ទ, [ក្រុមហ៊ុន]</code>\n\n"
+                "<code>/addbuyer ឈ្មោះ, លេខទូរស័ព្ទ, @username, [ក្រុមហ៊ុន]</code>\n\n"
                 "ឧទាហរណ៍:\n"
-                "<code>/addbuyer លោក សុខ, 012345678, កសិដ្ឋាន កក្កដា</code>"
+                "<code>/addbuyer លោក សុខ, 012345678, @sokh_buyer, កសិដ្ឋាន កក្កដា</code>"
             )
             return
             
         items = [i.strip() for i in parts.split(',')]
-        if len(items) < 2:
-            _send_bot_message(chat_id, "⚠️ សូមបញ្ចូលយ៉ាងហោចណាស់ <b>ឈ្មោះ</b> និង <b>លេខទូរស័ព្ទ</b> ដោយខណ្ឌចែកដោយសញ្ញាក្បៀស (,)។")
+        if len(items) < 3:
+            _send_bot_message(chat_id, "⚠️ សូមបញ្ចូលយ៉ាងហោចណាស់ <b>ឈ្មោះ</b>, <b>លេខទូរស័ព្ទ</b> និង <b>@username</b> ដោយខណ្ឌចែកដោយសញ្ញាក្បៀស (,)។")
             return
             
         name = items[0]
         phone = items[1]
-        company = items[2] if len(items) > 2 else ""
+        telegram_username = items[2]
+        if not telegram_username.startswith("@"):
+            telegram_username = "@" + telegram_username
+            
+        company = items[3] if len(items) > 3 else ""
         
-        success = add_buyer(name, phone, company, _get_db_connection, _ensure_db_ready)
+        success = add_buyer(name, phone, telegram_username, company, _get_db_connection, _ensure_db_ready)
         if success:
-            _send_bot_message(chat_id, f"✅ <b>បានបន្ថែមអ្នកទិញជោគជ័យ!</b>\n\n👤 {escape(name)}\n📞 {escape(phone)}\n🏢 {escape(company)}")
+            company_str = escape(company) if company else "មិនមាន"
+            _send_bot_message(chat_id, f"✅ <b>បានបន្ថែមអ្នកទិញជោគជ័យ!</b>\n<code>━━━━━━━━━━━━━━━━</code>\n👤 <b>ឈ្មោះ:</b> {escape(name)}\n📞 <b>ទូរស័ព្ទ:</b> <code>{escape(phone)}</code>\n💬 <b>Telegram:</b> {escape(telegram_username)}\n🏢 <b>ក្រុមហ៊ុន:</b> {company_str}")
         else:
             _send_bot_message(chat_id, "⚠️ មិនអាចបន្ថែមអ្នកទិញបានទេ សូមព្យាយាមម្តងទៀត។")
     except Exception:
