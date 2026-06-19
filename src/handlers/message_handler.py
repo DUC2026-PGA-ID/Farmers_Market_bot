@@ -432,9 +432,9 @@ def handle_addbuyer(chat_id: int, text: str) -> None:
             _send_bot_message(
                 chat_id,
                 "ℹ️ <b>របៀបប្រើប្រាស់:</b>\n"
-                "<code>/addbuyer ឈ្មោះ, លេខទូរស័ព្ទ, @username, [ក្រុមហ៊ុន]</code>\n\n"
+                "<code>/addbuyer</code> ឈ្មោះ, លេខទូរស័ព្ទ, @username, [ក្រុមហ៊ុន]\n\n"
                 "ឧទាហរណ៍:\n"
-                "<code>/addbuyer លោក សុខ, 012345678, @sokh_buyer, កសិដ្ឋាន កក្កដា</code>"
+                "<code>/addbuyer</code> លោក សុខ, 012345678, @sokh_buyer, កសិដ្ឋាន កក្កដា"
             )
             return
             
@@ -469,19 +469,19 @@ def handle_broadcast(chat_id: int, text: str) -> None:
     try:
         msg_text = text.replace("/broadcast", "").strip()
         if not msg_text:
-            _send_bot_message(chat_id, "⚠️ សូមបញ្ចូលសារដែលចង់ផ្ញើ។ ឧទាហរណ៍: <code>/broadcast សួស្តីបងប្អូនកសិករ!</code>")
+            _send_bot_message(chat_id, "⚠️ សូមបញ្ចូលសារដែលចង់ផ្ញើ។ ឧទាហរណ៍: /broadcast សួស្តីបងប្អូនកសិករ!")
             return
             
         all_chats = get_all_user_chat_ids(_get_db_connection, _ensure_db_ready)
         success_count = 0
         for cid in all_chats:
             try:
-                _send_bot_message(cid, f"📢 <b>សេចក្តីជូនដំណឹង:</b>\n\n{escape(msg_text)}")
+                _send_bot_message(cid, f"📢 សេចក្តីជូនដំណឹង:\n\n{escape(msg_text)}")
                 success_count += 1
             except Exception:
                 pass
                 
-        _send_bot_message(chat_id, f"✅ បានផ្ញើសារទៅកាន់អ្នកប្រើប្រាស់ចំនួន <b>{success_count}</b> នាក់។")
+        _send_bot_message(chat_id, f"✅ បានផ្ញើសារទៅកាន់អ្នកប្រើប្រាស់ចំនួន {success_count} នាក់។")
     except Exception:
         logger.exception("message_handler: Error in handle_broadcast")
         _send_bot_message(chat_id, "⚠️ មានបញ្ហាក្នុងការផ្ញើសារ។")
@@ -506,7 +506,7 @@ def handle_pricealert(chat_id: int) -> None:
             except Exception:
                 pass
                 
-        _send_bot_message(chat_id, f"✅ បានផ្ញើដំណឹងតម្លៃទីផ្សារទៅកាន់អ្នកប្រើប្រាស់ចំនួន <b>{success_count}</b> នាក់។")
+        _send_bot_message(chat_id, f"✅ បានផ្ញើដំណឹងតម្លៃទីផ្សារទៅកាន់អ្នកប្រើប្រាស់ចំនួន {success_count} នាក់។")
     except Exception:
         logger.exception("message_handler: Error in handle_pricealert")
         _send_bot_message(chat_id, "⚠️ មានបញ្ហាក្នុងការផ្ញើដំណឹងតម្លៃទីផ្សារ។")
@@ -543,10 +543,10 @@ def handle_sell(chat_id: int, text: str) -> None:
         if not parts:
             _send_bot_message(
                 chat_id,
-                "ℹ️ <b>របៀបប្រកាសលក់កសិផល (ប្រភេទ B)</b>\n\n"
-                "<code>/sell ឈ្មោះដំណាំ, ប្រភេទ, ចំនួន, តម្លៃ</code>\n\n"
+                "ℹ️ របៀបប្រកាសលក់កសិផល (ប្រភេទ B)\n\n"
+                "/sell ឈ្មោះដំណាំ, ប្រភេទ, ចំនួន, តម្លៃ\n\n"
                 "ឧទាហរណ៍:\n"
-                "<code>/sell ស្រូវសើម, ប្រភេទ B, ៥០០គីឡូ, ៨០០៛/គីឡូ</code>"
+                "/sell ស្រូវសើម, ប្រភេទ B, ៥០០គីឡូ, ៨០០៛/គីឡូ"
             )
             return
             
