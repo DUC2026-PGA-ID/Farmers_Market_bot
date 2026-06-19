@@ -168,8 +168,8 @@ def _translate_to_khmer(text: str) -> str:
         return ""
     translations = {
         "Corn": "ពោត",
-        "Cucumber": "ត្រសក់",
-        "Damaged Rice": "ចុងអង្ករ",
+        "Cucumber": "ម្ទេស",
+        "Damaged Rice": "ឪឡឹក",
         "Mango": "ស្វាយ",
         "Rice": "អង្ករ",
         "kg": "គីឡូក្រាម",
@@ -201,7 +201,8 @@ def handle_view_catalog(chat_id: int) -> None:
             # Emojis for better UX
             emoji = "🌾"
             if "ពោត" in kh_name: emoji = "🌽"
-            elif "ត្រសក់" in kh_name: emoji = "🥒"
+            elif "ម្ទេស" in kh_name: emoji = "🌶️"
+            elif "ឪឡឹក" in kh_name: emoji = "🍉"
             elif "ស្វាយ" in kh_name: emoji = "🥭"
             elif "អង្ករ" in kh_name: emoji = "🍚"
             
@@ -813,9 +814,10 @@ def handle_callback_query(callback_query: dict) -> None:
             crop_id = int(data.split("_")[1])
             crop = get_crop_by_id(crop_id, _get_db_connection, _ensure_db_ready)
             if crop:
-                c_name = escape(str(crop.get('crop_name') or 'មិនមាន'))
+                raw_name = crop.get('crop_name') or 'មិនមាន'
+                c_name = escape(_translate_to_khmer(str(raw_name)))
                 c_cat  = escape(str(crop.get('category') or 'មិនមាន'))
-                c_unit = escape(str(crop.get('unit') or 'មិនមាន'))
+                c_unit = escape(_translate_to_khmer(str(crop.get('unit') or 'មិនមាន')))
                 c_desc = escape(str(crop.get('description') or 'មិនមាន'))
                 c_qual = escape(str(crop.get('quality_standards') or 'មិនមាន'))
                 
