@@ -49,6 +49,17 @@ def get_crop_by_id(crop_id: int, get_db_connection, ensure_database_ready) -> di
     try:
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
+        
+        # Ensure the columns exist before querying
+        try:
+            cursor.execute("ALTER TABLE crops ADD COLUMN description TEXT")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE crops ADD COLUMN quality_standards TEXT")
+        except Exception:
+            pass
+            
         cursor.execute(
             "SELECT crop_id, crop_name, category, unit, description, quality_standards "
             "FROM crops WHERE crop_id = %s",
