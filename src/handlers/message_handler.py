@@ -832,7 +832,7 @@ def handle_callback_query(callback_query: dict) -> None:
             if crop:
                 raw_name = crop.get('crop_name') or 'មិនមាន'
                 c_name = escape(_translate_to_khmer(str(raw_name)))
-                c_cat  = escape(str(crop.get('category') or 'មិនមាន'))
+                c_cat  = escape(_translate_to_khmer(str(crop.get('category') or 'មិនមាន')))
                 
                 raw_unit = str(crop.get('unit') or 'មិនមាន')
                 kh_unit = _translate_to_khmer(raw_unit)
@@ -840,8 +840,23 @@ def handle_callback_query(callback_query: dict) -> None:
                     kh_unit = "គីឡូក្រាម"
                 c_unit = escape(kh_unit)
                 
-                c_desc = escape(str(crop.get('description') or 'មិនមាន'))
-                c_qual = escape(str(crop.get('quality_standards') or 'មិនមាន'))
+                # Default information if DB is empty
+                default_info = {
+                    "Corn": {"desc": "ពោតក្រហមគ្រាប់ធំៗល្អ សាកសមសម្រាប់ផលិតចំណីសត្វ", "qual": "សំណើម < ១៤%, គ្រាប់បែកខូច < ៥%"},
+                    "Cucumber": {"desc": "ម្ទេសស្រស់ល្អ មិនទាន់ទុំពេកសាកសមសម្រាប់ការនាំចេញ", "qual": "ទំហំស្តង់ដារ មិនមានស្នាម ឬសត្វល្អិត"},
+                    "Damaged Rice": {"desc": "ឪឡឹកផ្អែម សំបកក្រាស់ ល្អសម្រាប់ការទុកដាក់យូរ", "qual": "ទម្ងន់ចាប់ពី ២គីឡូឡើងទៅ គ្មានស្នាមប្រេះ"},
+                    "Mango": {"desc": "ស្វាយកែវរមៀតសាច់ក្រាស់ ល្អសម្រាប់ការនាំចេញ និងកែច្នៃ", "qual": "ផ្លែចាស់ល្អ ទំហំចាប់ពី ៣០០ក្រាមឡើងទៅ"},
+                    "Rice": {"desc": "អង្ករផ្កាម្លិះលេខ១ គ្រាប់វែង ពេលដាំមានក្លិនក្រអូប", "qual": "គ្រាប់បែក < ៥%, មិនមានកម្ទេចកម្ទីឡើយ"}
+                }
+                
+                db_desc = crop.get('description')
+                db_qual = crop.get('quality_standards')
+                
+                c_desc = db_desc if db_desc else default_info.get(raw_name, {}).get("desc", "មិនមាន")
+                c_qual = db_qual if db_qual else default_info.get(raw_name, {}).get("qual", "មិនមាន")
+                
+                c_desc = escape(str(c_desc))
+                c_qual = escape(str(c_qual))
                 
                 msg = (
                     f"📦 <b>ព័ត៌មានលម្អិត: {c_name}</b>\n"
