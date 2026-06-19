@@ -67,7 +67,7 @@ def get_recent_listings(get_db_connection, ensure_database_ready, limit: int = 1
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
         cursor.execute("""
-            SELECT l.id, l.crop_name, l.grade, l.quantity, l.price, u.name as seller_name, u.phone
+            SELECT l.id, l.crop_name, l.grade, l.quantity, l.price, u.name as seller_name, u.phone, u.tg_username
             FROM listings l
             LEFT JOIN users u ON l.seller_chat_id = u.chat_id
             ORDER BY l.created_at DESC

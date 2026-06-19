@@ -625,9 +625,12 @@ def handle_market(chat_id: int) -> None:
         for l in listings:
             seller = l['seller_name'] or "កសិករ"
             phone = l['phone'] or "មិនមានលេខទូរស័ព្ទ"
+            tg_un = f"@{l['tg_username']}" if l.get('tg_username') else "មិនមាន"
+            
             msg += f"\n🌾 <b>{escape(l['crop_name'])}</b> ({escape(l['grade'])})\n"
             msg += f"📦 {escape(l['quantity'])} | 💰 {escape(l['price'])}\n"
             msg += f"👤 {escape(seller)} | 📞 <code>{escape(phone)}</code>\n"
+            msg += f"💬 Telegram: {escape(tg_un)}\n"
             
         _send_bot_message(chat_id, msg)
     except Exception:
