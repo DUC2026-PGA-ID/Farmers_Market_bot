@@ -197,6 +197,8 @@ def handle_view_catalog(chat_id: int) -> None:
         for c in crops:
             kh_name = _translate_to_khmer(c['crop_name'])
             kh_unit = _translate_to_khmer(c['unit'])
+            if c['crop_name'] == "Damaged Rice":
+                kh_unit = "គីឡូក្រាម"
             
             # Emojis for better UX
             emoji = "🌾"
@@ -817,7 +819,13 @@ def handle_callback_query(callback_query: dict) -> None:
                 raw_name = crop.get('crop_name') or 'មិនមាន'
                 c_name = escape(_translate_to_khmer(str(raw_name)))
                 c_cat  = escape(str(crop.get('category') or 'មិនមាន'))
-                c_unit = escape(_translate_to_khmer(str(crop.get('unit') or 'មិនមាន')))
+                
+                raw_unit = str(crop.get('unit') or 'មិនមាន')
+                kh_unit = _translate_to_khmer(raw_unit)
+                if raw_name == "Damaged Rice":
+                    kh_unit = "គីឡូក្រាម"
+                c_unit = escape(kh_unit)
+                
                 c_desc = escape(str(crop.get('description') or 'មិនមាន'))
                 c_qual = escape(str(crop.get('quality_standards') or 'មិនមាន'))
                 
