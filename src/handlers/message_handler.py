@@ -163,6 +163,21 @@ def handle_wait_phone(chat_id: int, text: str, user_state: dict) -> None:
 #  COMMAND HANDLERS
 # ═══════════════════════════════════════════════════════════════
 
+def _translate_to_khmer(text: str) -> str:
+    if not text:
+        return ""
+    translations = {
+        "Corn": "ពោត",
+        "Cucumber": "ត្រសក់",
+        "Damaged Rice": "ចុងអង្ករ",
+        "Mango": "ស្វាយ",
+        "Rice": "អង្ករ",
+        "kg": "គីឡូក្រាម",
+        "Sack": "បាវ",
+        "50kg Sack": "បាវ ៥០គីឡូ"
+    }
+    return translations.get(text.strip(), text.strip())
+
 def handle_view_catalog(chat_id: int) -> None:
     """
     Delegates to catalog_service (src/services layer).
@@ -173,30 +188,43 @@ def handle_view_catalog(chat_id: int) -> None:
         if not crops:
             _send_bot_message(
                 chat_id,
-                "📦 <b>មិនមានកសិផលក្នុងកាតាឡុកទេ / No products in catalog yet.</b>"
+                "📦 <b>មិនទាន់មានកសិផលក្នុងកាតាឡុកទេ</b>"
             )
             return
 
         markup = telebot.types.InlineKeyboardMarkup(row_width=2)
-        buttons = [
-            telebot.types.InlineKeyboardButton(
-                f"{c['crop_name']} — {c['unit']}",
-                callback_data=f"crop_{c['crop_id']}"
+        buttons = []
+        for c in crops:
+            kh_name = _translate_to_khmer(c['crop_name'])
+            kh_unit = _translate_to_khmer(c['unit'])
+            
+            # Emojis for better UX
+            emoji = "🌾"
+            if "ពោត" in kh_name: emoji = "🌽"
+            elif "ត្រសក់" in kh_name: emoji = "🥒"
+            elif "ស្វាយ" in kh_name: emoji = "🥭"
+            elif "អង្ករ" in kh_name: emoji = "🍚"
+            
+            btn_text = f"{emoji} {kh_name} ({kh_unit})"
+            buttons.append(
+                telebot.types.InlineKeyboardButton(
+                    btn_text,
+                    callback_data=f"crop_{c['crop_id']}"
+                )
             )
-            for c in crops
-        ]
+        
         markup.add(*buttons)
         _send_bot_message(
             chat_id,
-            "📦 <b>កាតាឡុកកសិផល / Product Catalog:</b>\n"
-            "សូមជ្រើសរើសផលិតផលខាងក្រោម:",
+            "📦 <b>កាតាឡុកកសិផល:</b>\n"
+            "សូមជ្រើសរើសប្រភេទកសិផលខាងក្រោម៖",
             reply_markup=markup,
         )
     except Exception:
         logger.exception("handle_view_catalog: unexpected error")
         _send_bot_message(
             chat_id,
-            "⚠️ <b>មានបញ្ហាទាញយកផលិតផល / Could not load catalog. Please try again.</b>"
+            "⚠️ <b>មានបញ្ហាទាញយកផលិតផល សូមព្យាយាមម្តងទៀត។</b>"
         )
 
 
