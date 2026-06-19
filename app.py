@@ -284,7 +284,7 @@ def get_or_create_user(chat_id: int, tg_first_name: str, tg_username: str) -> di
 
 def update_user_state(chat_id: int, **fields) -> bool:
     """Write allowed fields to DB (UPSERT) and clear cache."""
-    allowed = {"name", "phone", "state", "tg_first_name", "tg_username"}
+    allowed = {"name", "phone", "state", "tg_first_name", "tg_username", "latitude", "longitude"}
     sanitized = {k: v for k, v in fields.items() if k in allowed}
     if not sanitized or not ensure_database_ready():
         return False
