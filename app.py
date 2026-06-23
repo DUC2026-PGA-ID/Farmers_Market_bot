@@ -543,13 +543,20 @@ def _run_daily_alert_scheduler():
     import time
     from datetime import datetime, timedelta
     from src.handlers.message_handler import auto_broadcast_daily_price
+    from src.services.price_service import sync_prices_to_db
     
-    logger.info("app: Started daily price alert scheduler thread")
+    logger.info("app: Started background scheduler thread")
     last_alert_date = None
+    last_sync_hour = None
+    
+    # Pre-fetch prices immediately on server boot (non-blocking)
+    try:
+        sync_prices_to_db(_get_db_connection, ensure_database_ready)
+    except Exception:
+        logger.exception("app: Failed initial price sync")
     
     while True:
         try:
-            # Render servers are typically in UTC. Cambodia is UTC+7.
             now_utc = datetime.utcnow()
             now_khm = now_utc + timedelta(hours=7)
             
@@ -559,10 +566,14 @@ def _run_daily_alert_scheduler():
                 auto_broadcast_daily_price()
                 last_alert_date = now_khm.date()
                 
+            # Pre-fetch prices from Yahoo Finance every hour in the background
+            if now_khm.hour != last_sync_hour:
+                sync_prices_to_db(_get_db_connection, ensure_database_ready)
+                last_sync_hour = now_khm.hour
+                
         except Exception:
-            logger.exception("app: Error in daily alert scheduler")
+            logger.exception("app: Error in background scheduler")
             
-        # Check every 60 seconds
         time.sleep(60)
 
 ensure_database_ready()

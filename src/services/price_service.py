@@ -251,7 +251,6 @@ _PRICES_CACHE_TTL = 3600  # 1 hour
 def get_today_prices(get_db_connection, ensure_database_ready) -> list:
     """
     Returns today's prices with trend vs yesterday.
-    Auto-syncs from Yahoo Finance if today's data is missing.
     Results are cached for 1 hour to improve response times.
     """
     global _cached_today_prices, _prices_cache_time
@@ -261,9 +260,6 @@ def get_today_prices(get_db_connection, ensure_database_ready) -> list:
 
     if not ensure_database_ready():
         return []
-
-    # Auto-sync live prices for today if not yet done
-    sync_prices_to_db(get_db_connection, ensure_database_ready)
 
     connection = cursor = None
     try:
