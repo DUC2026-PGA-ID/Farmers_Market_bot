@@ -23,6 +23,15 @@ def get_all_user_chat_ids(get_db_connection, ensure_database_ready) -> list:
         if cursor:     cursor.close()
         if connection: connection.close()
 
+def _translate_to_khmer(text: str) -> str:
+    if not text: return ""
+    translations = {
+        "Corn": "ពោត", "Cucumber": "ម្ទេស", "Damaged Rice": "ឪឡឹក",
+        "Mango": "ស្វាយ", "Rice": "អង្ករ", "kg": "គីឡូក្រាម", "50kg Sack": "បាវ ៥០គីឡូ",
+        "Sack": "បាវ"
+    }
+    return translations.get(text, text)
+
 def generate_price_alert_message(get_db_connection, ensure_database_ready) -> str:
     """Generates a push notification message for price alerts."""
     prices = get_today_prices(get_db_connection, ensure_database_ready)
@@ -43,7 +52,12 @@ def generate_price_alert_message(get_db_connection, ensure_database_ready) -> st
         elif p["trend"] == "down":
             trend_icon = "📉"
             
-        msg += f"{trend_icon} <b>{p['crop_name']}</b>: {int(p['price']):,} ៛/{p['unit']}\n"
+        kh_name = _translate_to_khmer(p['crop_name'])
+        kh_unit = _translate_to_khmer(p['unit'])
+        if p["crop_name"] == "Damaged Rice":
+            kh_unit = "គីឡូក្រាម"
+            
+        msg += f"{trend_icon} <b>{kh_name}</b>: {int(p['price']):,} ៛/{kh_unit}\n"
         if p["change"] > 0:
             direction = "កើនឡើង" if p["trend"] == "up" else "ធ្លាក់ចុះ"
             msg += f"   <i>({direction} {int(p['change']):,} ៛)</i>\n"
