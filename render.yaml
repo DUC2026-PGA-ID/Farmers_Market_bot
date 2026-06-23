@@ -5,7 +5,7 @@ services:
     plan: free
     autoDeploy: true
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 30 --keep-alive 5
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 30 --keep-alive 5
     healthCheckPath: /healthz
     envVars:
       - key: BOT_TOKEN
