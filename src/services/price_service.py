@@ -242,11 +242,23 @@ def sync_prices_to_db(get_db_connection, ensure_database_ready) -> int:
 #  READ — Today's prices + yesterday trend
 # ═══════════════════════════════════════════════════════════════
 
+import time
+
+_cached_today_prices = []
+_prices_cache_time = 0
+_PRICES_CACHE_TTL = 3600  # 1 hour
+
 def get_today_prices(get_db_connection, ensure_database_ready) -> list:
     """
     Returns today's prices with trend vs yesterday.
     Auto-syncs from Yahoo Finance if today's data is missing.
+    Results are cached for 1 hour to improve response times.
     """
+    global _cached_today_prices, _prices_cache_time
+    
+    if time.time() - _prices_cache_time < _PRICES_CACHE_TTL and _cached_today_prices:
+        return _cached_today_prices
+
     if not ensure_database_ready():
         return []
 
@@ -307,6 +319,10 @@ def get_today_prices(get_db_connection, ensure_database_ready) -> list:
                 "trend":     trend,
                 "source":    r.get("source") or "Yahoo Finance",
             })
+        
+        _cached_today_prices = result
+        _prices_cache_time = time.time()
+        
         return result
 
     except Exception:

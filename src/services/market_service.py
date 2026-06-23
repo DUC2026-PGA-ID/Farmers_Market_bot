@@ -57,7 +57,18 @@ def add_listing(seller_chat_id: int, crop_name: str, grade: str, quantity: str, 
         if cursor:     cursor.close()
         if connection: connection.close()
 
+import time
+
+_cached_recent_listings = []
+_listings_cache_time = 0
+_LISTINGS_CACHE_TTL = 15  # 15 seconds
+
 def get_recent_listings(get_db_connection, ensure_database_ready, limit: int = 10) -> list:
+    global _cached_recent_listings, _listings_cache_time
+    
+    if time.time() - _listings_cache_time < _LISTINGS_CACHE_TTL and _cached_recent_listings:
+        return _cached_recent_listings
+
     if not ensure_database_ready():
         return []
     ensure_listings_table(get_db_connection, ensure_database_ready)
@@ -73,7 +84,10 @@ def get_recent_listings(get_db_connection, ensure_database_ready, limit: int = 1
             ORDER BY l.created_at DESC
             LIMIT %s
         """, (limit,))
-        return cursor.fetchall()
+        rows = cursor.fetchall()
+        _cached_recent_listings = rows
+        _listings_cache_time = time.time()
+        return rows
     except Exception:
         logger.exception("market_service: Failed to fetch listings")
         return []

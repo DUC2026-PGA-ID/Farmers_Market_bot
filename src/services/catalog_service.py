@@ -6,8 +6,13 @@
 #           chat handler logic.
 # ─────────────────────────────────────────────────────────────
 import logging
+import time
 
 logger = logging.getLogger(__name__)
+
+_cached_all_crops = []
+_crops_cache_time = 0
+_CROPS_CACHE_TTL = 300  # 5 minutes
 
 
 def get_all_crops(get_db_connection, ensure_database_ready) -> list:
@@ -19,6 +24,11 @@ def get_all_crops(get_db_connection, ensure_database_ready) -> list:
       - If DB is unreachable → logs the error and returns []
       - Caller (handler) checks for empty list and notifies user
     """
+    global _cached_all_crops, _crops_cache_time
+    
+    if time.time() - _crops_cache_time < _CROPS_CACHE_TTL and _cached_all_crops:
+        return _cached_all_crops
+
     if not ensure_database_ready():
         logger.warning("catalog_service: DB not ready, returning empty crop list.")
         return []
@@ -30,7 +40,10 @@ def get_all_crops(get_db_connection, ensure_database_ready) -> list:
         cursor.execute(
             "SELECT crop_id, crop_name, category, unit FROM crops ORDER BY crop_name"
         )
-        return cursor.fetchall()
+        rows = cursor.fetchall()
+        _cached_all_crops = rows
+        _crops_cache_time = time.time()
+        return rows
     except Exception:
         logger.exception("catalog_service: DB error in get_all_crops")
         return []

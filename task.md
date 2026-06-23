@@ -1,0 +1,17 @@
+- `[x]` REQ-S02: Verified Buyer Directory
+  - `[x]` Create `buyers` table in MySQL
+  - `[x]` Create `buyer_service.py` with get_all_buyers and add_buyer
+  - `[x]` Add `/buyers` and `/addbuyer` commands to `message_handler.py`
+  - `[x]` Update `app.py` command list
+  - `[x]` Tested codebase structure
+- `[x]` REQ-S03: Push Notifications
+  - `[x]` Create `notification_service.py`
+  - `[x]` Add `/broadcast` and `/pricealert` commands
+  - `[x]` Update `app.py` command list
+- `[x]` REQ-S04: Map Integration
+  - `[x]` Add `latitude` and `longitude` to `users` table schema in `app.py`
+  - `[x]` Handle Telegram Location payload in `message_handler.py`
+  - `[x]` Add `/location` helper command
+- `[x]` REQ-S05: B-Grade Retail Market
+  - `[x]` Create `listings` table and `market_service.py`
+  - `[x]` Add `/sell` and `/market` commands
