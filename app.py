@@ -461,7 +461,6 @@ init_handler(
 # ═══════════════════════════════════════════════════════════════
 
 def _process_update_async(update: dict) -> None:
-    configure_bot_commands()
     message = update.get("message") or update.get("edited_message")
     if message:
         try:
@@ -578,6 +577,7 @@ def _run_daily_alert_scheduler():
 
 ensure_database_ready()
 configure_webhook()
+configure_bot_commands()
 
 # Start the background thread for daily alerts
 import threading
