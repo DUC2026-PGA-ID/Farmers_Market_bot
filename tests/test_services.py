@@ -43,6 +43,11 @@ class TestServices(unittest.TestCase):
     
     def test_catalog_service_caching(self):
         """Test if the catalog service fetches data and caches it correctly."""
+        # Reset global cache for isolated testing
+        import src.services.catalog_service
+        src.services.catalog_service._cached_all_crops = []
+        src.services.catalog_service._crops_cache_time = 0
+        
         # First call fetches from mock DB
         crops = get_all_crops(mock_get_db_connection, mock_ensure_db_ready)
         self.assertIsNotNone(crops)
