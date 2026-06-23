@@ -38,7 +38,6 @@ def add_listing(seller_chat_id: int, crop_name: str, grade: str, quantity: str, 
                 get_db_connection, ensure_database_ready) -> bool:
     if not ensure_database_ready():
         return False
-    ensure_listings_table(get_db_connection, ensure_database_ready)
 
     connection = cursor = None
     try:
@@ -71,7 +70,6 @@ def get_recent_listings(get_db_connection, ensure_database_ready, limit: int = 1
 
     if not ensure_database_ready():
         return []
-    ensure_listings_table(get_db_connection, ensure_database_ready)
 
     connection = cursor = None
     try:

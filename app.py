@@ -163,6 +163,16 @@ def _ensure_columns(cursor) -> None:
         if col_exists(col):
             safe_exec(f"ALTER TABLE users DROP COLUMN `{col}`")
 
+    # Ensure crops table columns
+    try:
+        cursor.execute("ALTER TABLE crops ADD COLUMN description TEXT")
+    except Exception:
+        pass
+    try:
+        cursor.execute("ALTER TABLE crops ADD COLUMN quality_standards TEXT")
+    except Exception:
+        pass
+
 
 def ensure_database_ready() -> bool:
     global _database_ready
@@ -194,6 +204,20 @@ def ensure_database_ready() -> bool:
                     UNIQUE KEY uq_chat_id (chat_id)
                 )
             """)
+            
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS listings (
+                    id             BIGINT       NOT NULL AUTO_INCREMENT,
+                    seller_chat_id BIGINT       NOT NULL,
+                    crop_name      VARCHAR(100) NOT NULL,
+                    grade          VARCHAR(50)  NOT NULL DEFAULT 'B-Grade',
+                    quantity       VARCHAR(100) NOT NULL,
+                    price          VARCHAR(100) NOT NULL,
+                    created_at     TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id)
+                )
+            """)
+            
             _ensure_columns(cursor)
             connection.commit()
             _database_ready = True
