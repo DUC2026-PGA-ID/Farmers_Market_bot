@@ -120,7 +120,12 @@ def _get_db_connection():
             user=DB_USER, password=DB_PASSWORD,
             database=DB_NAME, connection_timeout=3,
         )
-    return _db_pool.get_connection()
+    conn = _db_pool.get_connection()
+    try:
+        conn.ping(reconnect=True, attempts=3, delay=1)
+    except Exception:
+        pass
+    return conn
 
 
 def _ensure_columns(cursor) -> None:
