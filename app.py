@@ -118,7 +118,7 @@ def _get_db_connection():
             pool_reset_session=True,
             host=DB_HOST, port=DB_PORT,
             user=DB_USER, password=DB_PASSWORD,
-            database=DB_NAME, connection_timeout=10,
+            database=DB_NAME, connection_timeout=3,
         )
     return _db_pool.get_connection()
 
