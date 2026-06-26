@@ -583,16 +583,16 @@ def _run_daily_alert_scheduler():
             now_utc = datetime.utcnow()
             now_khm = now_utc + timedelta(hours=7)
             
-            # Target alert time: 7:00 AM Cambodia Time
-            if now_khm.hour == 7 and now_khm.date() != last_alert_date:
-                logger.info("app: Triggering daily auto price alert")
-                auto_broadcast_daily_price()
-                last_alert_date = now_khm.date()
-                
             # Pre-fetch prices from Yahoo Finance every hour in the background
             if now_khm.hour != last_sync_hour:
                 sync_prices_to_db(_get_db_connection, ensure_database_ready)
                 last_sync_hour = now_khm.hour
+                
+            # Target alert time: 7:00 AM Cambodia Time (After Sync)
+            if now_khm.hour == 7 and now_khm.date() != last_alert_date:
+                logger.info("app: Triggering daily auto price alert")
+                auto_broadcast_daily_price()
+                last_alert_date = now_khm.date()
                 
         except Exception:
             logger.exception("app: Error in background scheduler")

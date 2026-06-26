@@ -228,6 +228,11 @@ def sync_prices_to_db(get_db_connection, ensure_database_ready) -> int:
 
         connection.commit()
         logger.info("price_service: Synced %d prices to DB", synced)
+        
+        # Invalidate cache so get_today_prices fetches the new data immediately
+        global _cached_today_prices
+        _cached_today_prices = []
+        
         return synced
 
     except Exception:
