@@ -299,13 +299,14 @@ def _fmt_price(amount) -> str:
 
 
 def handle_price(chat_id: int) -> None:
-    """
-    REQ-S01: Show today's verified Phnom Penh market prices with trend.
-    Delegated entirely to price_service — no DB logic here.
-    """
+    import time
+    t0 = time.time()
     try:
         ensure_prices_table(_get_db_connection, _ensure_db_ready)
+        t1 = time.time()
         prices = get_today_prices(_get_db_connection, _ensure_db_ready)
+        t2 = time.time()
+        logger.info(f"handle_price timings: ensure_table={t1-t0:.3f}s, get_prices={t2-t1:.3f}s")
 
         if not prices:
             _send_bot_message(

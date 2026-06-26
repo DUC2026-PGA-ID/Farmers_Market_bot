@@ -243,9 +243,14 @@ def ensure_database_ready() -> bool:
 def get_or_create_user(chat_id: int, tg_first_name: str, tg_username: str) -> dict:
     """Return user state dict from cache → DB → default."""
     from src.handlers.message_handler import STATE_START
+    import time
+    t0 = time.time()
+    
     with _user_cache_lock:
         cached = _user_cache.get(chat_id)
         if cached and (_time.monotonic() - cached["ts"]) < _USER_CACHE_TTL:
+            t1 = time.time()
+            logger.info(f"get_user timings (cache): total={t1-t0:.3f}s")
             return dict(cached["state"])
 
     default = {
