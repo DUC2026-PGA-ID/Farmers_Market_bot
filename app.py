@@ -173,9 +173,11 @@ def _ensure_columns(cursor) -> None:
     except Exception:
         pass
 
+_database_last_check = 0
+_DATABASE_RETRY_INTERVAL = 60  # seconds
 
 def ensure_database_ready() -> bool:
-    global _database_ready
+    global _database_ready, _database_last_check
     if _database_ready:
         return True
     if not _mysql_is_configured() or mysql is None:
@@ -184,6 +186,13 @@ def ensure_database_ready() -> bool:
     with _database_lock:
         if _database_ready:
             return True
+            
+        import time
+        now = time.monotonic()
+        if now - _database_last_check < _DATABASE_RETRY_INTERVAL:
+            return False
+            
+        _database_last_check = now
         connection = cursor = None
         try:
             connection = _get_db_connection()
