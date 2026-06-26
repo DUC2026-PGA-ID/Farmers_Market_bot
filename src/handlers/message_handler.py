@@ -788,7 +788,7 @@ def _route_message(message: dict,
     elif state == STATE_WAIT_PHONE:
         handle_wait_phone(chat_id, text, user_state)
 
-    if _user["state"] != STATE_START:
+    if user_state.get("state", STATE_START) != STATE_START:
         _send_bot_message(
             chat_id,
             "⚠️ <b>លោកអ្នកកំពុងស្ថិតក្នុងដំណើរការផ្សេង!</b>\n"
